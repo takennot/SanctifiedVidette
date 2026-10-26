@@ -1,2 +1,2 @@
-# SanctifiedVidette
-A very bad engine
+# Sanctified Vidette
+A very bad engine + collection of assessments
