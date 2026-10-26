@@ -5,6 +5,8 @@ set_languages("c++20")
 
 add_rules("mode.debug", "mode.release")
 
+add_rules("plugin.compile_commands.autoupdate")
+
 add_requires("glfw")
 
 add_requires("glbinding")
