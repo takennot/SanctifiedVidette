@@ -11,8 +11,6 @@
 #include <sstream>
 #include <string>
 #include <random>
-#include <cstdint>
-#include <memory>
 
 struct Color
 {
