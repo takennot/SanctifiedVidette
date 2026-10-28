@@ -14,8 +14,6 @@
 #include <cstdint>
 #include <memory>
 
-constexpr std::size_t RAM_SIZE = 16ULL * 1024 * 1024 * 1024;
-
 struct Color
 {
     float r, g, b;
@@ -241,15 +239,6 @@ int main()
 
     bool alternateRoof = false;
     bool previousSpace = false;
-
-
-    //  RAM
-    auto wastedRAM = std::make_unique_for_overwrite<std::uint8_t[]>(RAM_SIZE);
-    volatile std::uint8_t* ptr = wastedRAM.get();
-    for (std::size_t i = 0; i < RAM_SIZE; i += 4096)
-    {
-        ptr[i] = 1;
-    }
 
     while (!glfwWindowShouldClose(window))
     {
