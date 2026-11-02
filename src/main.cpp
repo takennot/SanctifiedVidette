@@ -4,6 +4,7 @@
 #include <glbinding/gl/gl.h>
 #include <glbinding/glbinding.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -211,6 +212,31 @@ MeshData makeSphere()
     // WIP fix later
 
     return md;
+}
+
+// WIP
+MeshData makeFloor()
+{
+    MeshData md;
+    const float y = -0.8f;
+    // TODO fix
+    addQuad(md, {}, {}, {}, {});
+    return md;
+}
+
+Mesh uploadMesh(const MeshData& meshData)
+{
+    Mesh mesh;
+
+
+
+    return mesh;
+}
+
+// wip
+void drawMesh()
+{
+
 }
 
 // // Draw the original triangle, transformed using uniforms
