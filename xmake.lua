@@ -18,10 +18,12 @@ add_requires("imgui", {
     }
 })
 
+add_requires("glm")
+
 target("SanctifiedVidette")
     set_kind("binary")
     add_files("src/*.cpp")
-    add_packages("glfw", "glbinding", "imgui")
+    add_packages("glfw", "glbinding", "imgui", "glm")
     add_defines("GLFW_INCLUDE_NONE")
 
     if is_plat("windows") then

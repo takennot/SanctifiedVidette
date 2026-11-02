@@ -1,6 +1,9 @@
+#include "glbinding/gl/types.h"
 #include <GLFW/glfw3.h>
+#include <cstdint>
 #include <glbinding/gl/gl.h>
 #include <glbinding/glbinding.h>
+#include <glm/glm.hpp>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -11,18 +14,38 @@
 #include <sstream>
 #include <string>
 #include <random>
+#include <vector>
 
-struct Color
+struct Vertex
 {
-    float r, g, b;
+    float px, py, pz;
+    float nx, ny, nz;
+};
+
+struct MeshData
+{
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+};
+
+struct Mesh
+{
+    gl::GLuint vbo = 0, vao = 0, ebo = 0;
+    gl::GLsizei indexCount = 0;
 };
 
 struct Uniforms
 {
-    gl::GLint position;
-    gl::GLint scale;
-    gl::GLint rotation;
+    gl::GLint model;
+    gl::GLint view;
+    gl::GLint projection;
     gl::GLint color;
+    gl::GLint shadowPass;
+};
+
+struct Color
+{
+    float r, g, b;
 };
 
 // Read GLSL shader from disk
@@ -105,33 +128,39 @@ gl::GLuint createProgram(const std::string& vertexSource, const std::string& fra
     return program;
 }
 
-// Draw the original triangle, transformed using uniforms
-void drawTriangle(const Uniforms& u, float x, float y, float sx, float sy, float rotation, Color color)
+void addVertex(MeshData& meshData, glm::vec3 p, glm::vec3 n)
 {
-    gl::glUniform2f(u.position, x, y);
-    gl::glUniform2f(u.scale, sx, sy);
-    gl::glUniform1f(u.rotation, rotation);
-    gl::glUniform3f(u.color, color.r, color.g, color.b);
-
-    gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
+    meshData.vertices.push_back({p.x, p.y, p.z, n.x, n.y, n.z});
 }
 
-// Draw a rectangle with 2 draws of the same triangle
-void drawRectangle(const Uniforms& u, float x, float y, float width, float height, Color color)
-{
-    gl::glUniform1f(u.rotation, 0.0f);
-    gl::glUniform3f(u.color, color.r, color.g, color.b);
 
-    // Lower left triangle
-    gl::glUniform2f(u.position, x, y);
-    gl::glUniform2f(u.scale, width, height);
-    gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
-
-    // Upper right triangle
-    gl::glUniform2f(u.position, x + width, y + height);
-    gl::glUniform2f(u.scale, -width, -height); // flip
-    gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
-}
+// // Draw the original triangle, transformed using uniforms
+// void drawTriangle(const Uniforms& u, float x, float y, float sx, float sy, float rotation, Color color)
+// {
+//     gl::glUniform2f(u.position, x, y);
+//     gl::glUniform2f(u.scale, sx, sy);
+//     gl::glUniform1f(u.rotation, rotation);
+//     gl::glUniform3f(u.color, color.r, color.g, color.b);
+//
+//     gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
+// }
+//
+// // Draw a rectangle with 2 draws of the same triangle
+// void drawRectangle(const Uniforms& u, float x, float y, float width, float height, Color color)
+// {
+//     gl::glUniform1f(u.rotation, 0.0f);
+//     gl::glUniform3f(u.color, color.r, color.g, color.b);
+//
+//     // Lower left triangle
+//     gl::glUniform2f(u.position, x, y);
+//     gl::glUniform2f(u.scale, width, height);
+//     gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
+//
+//     // Upper right triangle
+//     gl::glUniform2f(u.position, x + width, y + height);
+//     gl::glUniform2f(u.scale, -width, -height); // flip
+//     gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
+// }
 
 std::string randomString(size_t length)
 {
@@ -268,24 +297,24 @@ int main()
         gl::glUseProgram(program);
         gl::glBindVertexArray(vao);
 
-        // House body: 2 triangles
-        drawRectangle(u, -0.50f, -0.72f, 1.00f, 1.04f, wallColor);
-
-        // Roof: 2 triangles merged into one big triangle
-        Color roofColor = alternateRoof ? roofBlue : roofRed;
-
-        drawTriangle(u, 0.0f, 0.32f, -0.60f, 0.43f, 0.0f, roofColor);
-
-        drawTriangle(u, 0.0f, 0.32f, 0.60f, 0.43f, 0.0f, roofColor);
-
-        // Left window: 2 triangles
-        drawRectangle(u, -0.36f, -0.13f, 0.22f, 0.25f, windowColor);
-
-        // Right window: 2 triangles
-        drawRectangle(u, 0.14f, -0.13f, 0.22f, 0.25f, windowColor);
-
-        // Door: 2 triangles
-        drawRectangle(u, -0.12f, -0.72f, 0.24f, 0.50f, doorColor);
+//         // House body: 2 triangles
+//         drawRectangle(u, -0.50f, -0.72f, 1.00f, 1.04f, wallColor);
+//
+//         // Roof: 2 triangles merged into one big triangle
+//         Color roofColor = alternateRoof ? roofBlue : roofRed;
+//
+//         drawTriangle(u, 0.0f, 0.32f, -0.60f, 0.43f, 0.0f, roofColor);
+//
+//         drawTriangle(u, 0.0f, 0.32f, 0.60f, 0.43f, 0.0f, roofColor);
+//
+//         // Left window: 2 triangles
+//         drawRectangle(u, -0.36f, -0.13f, 0.22f, 0.25f, windowColor);
+//
+//         // Right window: 2 triangles
+//         drawRectangle(u, 0.14f, -0.13f, 0.22f, 0.25f, windowColor);
+//
+//         // Door: 2 triangles
+//         drawRectangle(u, -0.12f, -0.72f, 0.24f, 0.50f, doorColor);
 
         std::string title = randomString(30);
         glfwSetWindowTitle(window, title.c_str());
