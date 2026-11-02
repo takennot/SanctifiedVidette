@@ -16,6 +16,9 @@
 #include <random>
 #include <vector>
 
+// p - position
+// n - normal
+// maybe add tex coords later
 struct Vertex
 {
     float px, py, pz;
@@ -133,6 +136,82 @@ void addVertex(MeshData& meshData, glm::vec3 p, glm::vec3 n)
     meshData.vertices.push_back({p.x, p.y, p.z, n.x, n.y, n.z});
 }
 
+// 1 quad = 2 indexed triangles I think?
+void addQuad(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d)
+{
+    const glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+    const std::uint32_t start = static_cast<std::uint32_t>(meshData.vertices.size());
+    addVertex(meshData, a, n);
+    addVertex(meshData, b, n);
+    addVertex(meshData, c, n);
+    addVertex(meshData, d, n);
+    meshData.indices.insert(meshData.indices.end(), {
+        start, start + 1, start + 2,
+        start, start + 2, start + 3
+    });
+}
+
+// should be almost same as addQuad but -1 arg
+void addTriangle(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c)
+{
+    const glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+    const std::uint32_t start = static_cast<std::uint32_t>(meshData.vertices.size());
+    addVertex(meshData, a, n);
+    addVertex(meshData, b, n);
+    addVertex(meshData, c, n);
+    meshData.indices.insert(meshData.indices.end(), {
+        start, start + 1, start + 2
+    });
+}
+
+// WIP, fix addquads
+MeshData makeCube()
+{
+    MeshData md;
+    const float s = 0.65f;
+    // TODO: make 6 faces here later
+    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+
+    return md;
+}
+
+// WIP, fix later
+MeshData makePyramid()
+{
+    MeshData md;
+    const float s = 0.65f;
+    const glm::vec3 tip{0.0f, 0.85f, 0.0f};
+    // TODO: fix these
+    const glm::vec3 a{s, s, s};
+    const glm::vec3 b{s, s, s};
+    const glm::vec3 c{s, s, s};
+    const glm::vec3 d{s, s, s};
+    // and these
+    addTriangle(md, a, b, tip);
+    addTriangle(md, a, b, tip);
+    addTriangle(md, a, b, tip);
+    addTriangle(md, a, b, tip);
+    addQuad(md, a, b, c, d); // bottom face
+
+    return md;
+}
+
+// WIP fix after pyramid & cube?
+MeshData makeSphere()
+{
+    MeshData md;
+    constexpr float pi = 3.14159265358979323846f;
+    const float radius = 0.7f;
+
+    // WIP fix later
+
+    return md;
+}
 
 // // Draw the original triangle, transformed using uniforms
 // void drawTriangle(const Uniforms& u, float x, float y, float sx, float sy, float rotation, Color color)
