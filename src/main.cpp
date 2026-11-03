@@ -1,3 +1,4 @@
+#include "glbinding/gl/functions.h"
 #include "glbinding/gl/types.h"
 #include <GLFW/glfw3.h>
 #include <cstdint>
@@ -202,6 +203,7 @@ MeshData makePyramid()
     return md;
 }
 
+// OOOOOO CHECK THIS OUT: https://www.songho.ca/opengl/gl_sphere.html
 // WIP fix after pyramid & cube?
 MeshData makeSphere()
 {
@@ -231,6 +233,13 @@ Mesh uploadMesh(const MeshData& meshData)
 
 
     return mesh;
+}
+
+void destroyMesh(const Mesh& m)
+{
+    gl::glDeleteBuffers(1, &m.ebo);
+    gl::glDeleteBuffers(1, &m.vbo);
+    gl::glDeleteVertexArrays(1, &m.vao);
 }
 
 // wip
@@ -298,7 +307,9 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    glfwWindowHint(GLFW_STENCIL_BITS, 8);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     GLFWwindow* window = glfwCreateWindow(1000, 1000, "Sanctified Vidette", nullptr, nullptr);
 
@@ -316,8 +327,10 @@ int main()
     glbinding::initialize(glfwGetProcAddress);
 
     // Load and compile GLSL
-    std::string vertexSource = readFile("shaders/house.vert");
-    std::string fragmentSource = readFile("shaders/house.frag");
+    // std::string vertexSource = readFile("shaders/house.vert");
+    // std::string fragmentSource = readFile("shaders/house.frag");
+    std::string vertexSource = readFile("shaders/a2.vert");
+    std::string fragmentSource = readFile("shaders/a2.frag");
 
     gl::GLuint program = createProgram(vertexSource, fragmentSource);
 
@@ -331,60 +344,34 @@ int main()
     gl::glUseProgram(program);
 
     Uniforms u{
-        gl::glGetUniformLocation(program, "uPosition"),
-        gl::glGetUniformLocation(program, "uScale"),
-        gl::glGetUniformLocation(program, "uRotation"),
-        gl::glGetUniformLocation(program, "uColor")
+        gl::glGetUniformLocation(program, "uModel"),
+        gl::glGetUniformLocation(program, "uView"),
+        gl::glGetUniformLocation(program, "uProjection"),
+        gl::glGetUniformLocation(program, "uColor"),
+        gl::glGetUniformLocation(program, "uShadowPass")
     };
 
-    // geometry buffer
-    // A right triangle in local coordinates
-    const float triangle[] = {
-        0.0f, 0.0f,
-        1.0f, 0.0f,
-        0.0f, 1.0f
-    };
+    const Mesh cube = uploadMesh(makeCube());
+    const Mesh sphere = uploadMesh(makeSphere());
+    const Mesh pyramid = uploadMesh(makePyramid());
+    const Mesh floor = uploadMesh(makeFloor());
 
-    gl::GLuint vao = 0;
-    gl::GLuint vbo = 0;
-
-    gl::glGenVertexArrays(1, &vao);
-    gl::glGenBuffers(1, &vbo);
-
-    gl::glBindVertexArray(vao);
-    gl::glBindBuffer(gl::GL_ARRAY_BUFFER, vbo);
-
-    // Upload triangle data once
-    gl::glBufferData(gl::GL_ARRAY_BUFFER, sizeof(triangle), triangle, gl::GL_STATIC_DRAW);
-
-    gl::glVertexAttribPointer(0, 2, gl::GL_FLOAT, gl::GL_FALSE, 2 * sizeof(float), nullptr);
-
-    gl::glEnableVertexAttribArray(0);
-
-    // Colors yay
-    const Color wallColor   {0.82f, 0.49f, 0.32f};
-    const Color windowColor {0.35f, 0.76f, 0.91f};
-    const Color doorColor   {0.33f, 0.23f, 0.18f};
-
-    const Color roofRed     {0.75f, 0.20f, 0.24f};
-    const Color roofBlue    {0.20f, 0.35f, 0.78f};
-
-    bool alternateRoof = false;
-    bool previousSpace = false;
+    bool perspective = true;
+    bool previousP = false;
 
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
-        // Toggle once per Space key press
-        bool currentSpace = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        // Toggle once per P key press
+        const bool pressedP = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
 
-        if (currentSpace && !previousSpace)
+        if (pressedP && !previousP)
         {
-            alternateRoof = !alternateRoof;
+            perspective = !perspective;
+            glfwSetWindowTitle(window, perspective ? "Sanctified Vidette [Perspective]" : "Sanctified Vidette [Orthographic]");
         }
-
-        previousSpace = currentSpace;
+        previousP = pressedP;
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {
@@ -396,30 +383,12 @@ int main()
 
         gl::glViewport(0, 0, framebufferWidth, framebufferHeight);
 
+        const float aspect = float(framebufferWidth) / float(framebufferHeight);
+
         gl::glClearColor(0.78f, 0.88f, 0.96f, 1.0f);
         gl::glClear(gl::GL_COLOR_BUFFER_BIT);
 
         gl::glUseProgram(program);
-        gl::glBindVertexArray(vao);
-
-//         // House body: 2 triangles
-//         drawRectangle(u, -0.50f, -0.72f, 1.00f, 1.04f, wallColor);
-//
-//         // Roof: 2 triangles merged into one big triangle
-//         Color roofColor = alternateRoof ? roofBlue : roofRed;
-//
-//         drawTriangle(u, 0.0f, 0.32f, -0.60f, 0.43f, 0.0f, roofColor);
-//
-//         drawTriangle(u, 0.0f, 0.32f, 0.60f, 0.43f, 0.0f, roofColor);
-//
-//         // Left window: 2 triangles
-//         drawRectangle(u, -0.36f, -0.13f, 0.22f, 0.25f, windowColor);
-//
-//         // Right window: 2 triangles
-//         drawRectangle(u, 0.14f, -0.13f, 0.22f, 0.25f, windowColor);
-//
-//         // Door: 2 triangles
-//         drawRectangle(u, -0.12f, -0.72f, 0.24f, 0.50f, doorColor);
 
         std::string title = randomString(30);
         glfwSetWindowTitle(window, title.c_str());
