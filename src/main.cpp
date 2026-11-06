@@ -53,6 +53,13 @@ struct Color
     float r, g, b;
 };
 
+struct SceneObject
+{
+    const Mesh* mesh;
+    glm::mat4 model;
+    glm::vec3 color;
+};
+
 // Read GLSL shader from disk
 std::string readFile(const char* path)
 {
@@ -133,6 +140,7 @@ gl::GLuint createProgram(const std::string& vertexSource, const std::string& fra
     return program;
 }
 
+// helper
 void addVertex(MeshData& meshData, glm::vec3 p, glm::vec3 n)
 {
     meshData.vertices.push_back({p.x, p.y, p.z, n.x, n.y, n.z});
@@ -147,7 +155,8 @@ void addQuad(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec
     addVertex(meshData, b, n);
     addVertex(meshData, c, n);
     addVertex(meshData, d, n);
-    meshData.indices.insert(meshData.indices.end(), {
+    meshData.indices.insert(meshData.indices.end(),
+    {
         start, start + 1, start + 2,
         start, start + 2, start + 3
     });
@@ -161,68 +170,90 @@ void addTriangle(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c)
     addVertex(meshData, a, n);
     addVertex(meshData, b, n);
     addVertex(meshData, c, n);
-    meshData.indices.insert(meshData.indices.end(), {
+    meshData.indices.insert(meshData.indices.end(),
+    {
         start, start + 1, start + 2
     });
 }
 
-// WIP, fix addquads
 MeshData makeCube()
 {
     MeshData md;
     const float s = 0.65f;
-    // TODO: make 6 faces here later
-    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
-    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
-    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
-    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
-    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
-    addQuad(md, {s, s, s}, {s, s, s}, {s, s, s}, {s, s, s});
+    // Ty Martin for leaking the cube :)
+    addQuad(md, {-s,-s, s}, { s,-s, s}, { s, s, s}, {-s, s, s}); // front
+    addQuad(md, { s,-s,-s}, {-s,-s,-s}, {-s, s,-s}, { s, s,-s}); // back
+    addQuad(md, { s,-s, s}, { s,-s,-s}, { s, s,-s}, { s, s, s}); // right
+    addQuad(md, {-s,-s,-s}, {-s,-s, s}, {-s, s, s}, {-s, s,-s}); // left
+    addQuad(md, {-s, s, s}, { s, s, s}, { s, s,-s}, {-s, s,-s}); // top
+    addQuad(md, {-s,-s,-s}, { s,-s,-s}, { s,-s, s}, {-s,-s, s}); // bottom
 
     return md;
 }
 
-// WIP, fix later
 MeshData makePyramid()
 {
     MeshData md;
     const float s = 0.65f;
     const glm::vec3 tip{0.0f, 0.85f, 0.0f};
-    // TODO: fix these
-    const glm::vec3 a{s, s, s};
-    const glm::vec3 b{s, s, s};
-    const glm::vec3 c{s, s, s};
-    const glm::vec3 d{s, s, s};
-    // and these
+    const glm::vec3 a{-s, -s, s};
+    const glm::vec3 b{s, -s, s};
+    const glm::vec3 c{s, -s, -s};
+    const glm::vec3 d{-s, -s, -s};
     addTriangle(md, a, b, tip);
-    addTriangle(md, a, b, tip);
-    addTriangle(md, a, b, tip);
-    addTriangle(md, a, b, tip);
-    addQuad(md, a, b, c, d); // bottom face
+    addTriangle(md, b, c, tip);
+    addTriangle(md, c, d, tip);
+    addTriangle(md, d, a, tip);
+    addQuad(md, d, c, b, a); // bottom face
 
     return md;
 }
 
 // OOOOOO CHECK THIS OUT: https://www.songho.ca/opengl/gl_sphere.html
-// WIP fix after pyramid & cube?
-MeshData makeSphere()
+MeshData makeSphere(int stacks = 24, int slices = 32)
 {
     MeshData md;
     constexpr float pi = 3.14159265358979323846f;
     const float radius = 0.7f;
 
-    // WIP fix later
+    for (int y = 0; y <= stacks; ++y)
+    {
+        const float theta = pi * float(y) / float(stacks);
+        for (int x = 0; x <= slices; ++x)
+        {
+            const float phi = 2.0f * pi * float(x) / float(slices);
+            const glm::vec3 normal
+            {
+                std::sin(theta) * std::cos(phi),
+                std::cos(theta),
+                std::sin(theta) * std::sin(phi)
+            };
+            addVertex(md, radius * normal, normal);
+        }
+    }
+
+    for (int y = 0; y < stacks; ++y)
+    {
+        for (int x = 0; x < slices; ++x)
+        {
+            const std::uint32_t a = std::uint32_t(y * (slices + 1) + x);
+            const std::uint32_t b = a + std::uint32_t(slices + 1);
+            md.indices.insert(md.indices.end(),
+            {
+                a, a + 1, b,
+                a + 1, b + 1, b
+            });
+        }
+    }
 
     return md;
 }
 
-// WIP
 MeshData makeFloor()
 {
     MeshData md;
     const float y = -0.8f;
-    // TODO fix
-    addQuad(md, {}, {}, {}, {});
+    addQuad(md, {-5.3f,y, 4.0f}, { 5.3f,y, 4.0f}, { 5.3f,y,-4.0f}, {-5.3f,y,-4.0f});
     return md;
 }
 
@@ -230,7 +261,23 @@ Mesh uploadMesh(const MeshData& meshData)
 {
     Mesh mesh;
 
+    mesh.indexCount = static_cast<gl::GLsizei>(meshData.indices.size());
+    gl::glGenVertexArrays(1, &mesh.vao);
+    gl::glGenBuffers(1, &mesh.vbo);
+    gl::glGenBuffers(1, &mesh.ebo);
+    gl::glBindVertexArray(mesh.vao);
 
+    gl::glBindBuffer(gl::GL_ARRAY_BUFFER, mesh.vbo);
+    gl::glBufferData(gl::GL_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.vertices.size() * sizeof(Vertex)), meshData.vertices.data(), gl::GL_STATIC_DRAW);
+
+    gl::glBindBuffer(gl::GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+    gl::glBufferData(gl::GL_ELEMENT_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.indices.size() * sizeof(std::uint32_t)), meshData.indices.data(), gl::GL_STATIC_DRAW);
+
+    gl::glVertexAttribPointer(0, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), nullptr);
+    gl::glEnableVertexAttribArray(0);
+    gl::glVertexAttribPointer(1, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(3 * sizeof(float)));
+    gl::glEnableVertexAttribArray(1);
+    gl::glBindVertexArray(0);
 
     return mesh;
 }
@@ -243,38 +290,13 @@ void destroyMesh(const Mesh& m)
 }
 
 // wip
-void drawMesh()
+void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model, const glm::vec3& color)
 {
-
+    gl::glUniformMatrix4fv(u.model, 1, gl::GL_FALSE, glm::value_ptr(model));
+    gl::glUniform3f(u.color, color.r, color.g, color.b);
+    gl::glBindVertexArray(mesh.vao);
+    gl::glDrawElements(gl::GL_TRIANGLES, mesh.indexCount, gl::GL_UNSIGNED_INT, nullptr);
 }
-
-// // Draw the original triangle, transformed using uniforms
-// void drawTriangle(const Uniforms& u, float x, float y, float sx, float sy, float rotation, Color color)
-// {
-//     gl::glUniform2f(u.position, x, y);
-//     gl::glUniform2f(u.scale, sx, sy);
-//     gl::glUniform1f(u.rotation, rotation);
-//     gl::glUniform3f(u.color, color.r, color.g, color.b);
-//
-//     gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
-// }
-//
-// // Draw a rectangle with 2 draws of the same triangle
-// void drawRectangle(const Uniforms& u, float x, float y, float width, float height, Color color)
-// {
-//     gl::glUniform1f(u.rotation, 0.0f);
-//     gl::glUniform3f(u.color, color.r, color.g, color.b);
-//
-//     // Lower left triangle
-//     gl::glUniform2f(u.position, x, y);
-//     gl::glUniform2f(u.scale, width, height);
-//     gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
-//
-//     // Upper right triangle
-//     gl::glUniform2f(u.position, x + width, y + height);
-//     gl::glUniform2f(u.scale, -width, -height); // flip
-//     gl::glDrawArrays(gl::GL_TRIANGLES, 0, 3);
-// }
 
 std::string randomString(size_t length)
 {
@@ -326,9 +348,10 @@ int main()
     // glbinding provides access to OpenGL functions
     glbinding::initialize(glfwGetProcAddress);
 
+    gl::glEnable(gl::GL_DEPTH_TEST);
+    gl::glEnable(gl::GL_MULTISAMPLE);
+
     // Load and compile GLSL
-    // std::string vertexSource = readFile("shaders/house.vert");
-    // std::string fragmentSource = readFile("shaders/house.frag");
     std::string vertexSource = readFile("shaders/a2.vert");
     std::string fragmentSource = readFile("shaders/a2.frag");
 
@@ -343,7 +366,8 @@ int main()
 
     gl::glUseProgram(program);
 
-    Uniforms u{
+    Uniforms u
+    {
         gl::glGetUniformLocation(program, "uModel"),
         gl::glGetUniformLocation(program, "uView"),
         gl::glGetUniformLocation(program, "uProjection"),
@@ -359,6 +383,9 @@ int main()
     bool perspective = true;
     bool previousP = false;
 
+    bool wireframe = false;
+    bool previousW = false;
+
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -373,6 +400,15 @@ int main()
         }
         previousP = pressedP;
 
+        const bool pressedW = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+
+        if (pressedW && !previousW)
+        {
+            wireframe = !wireframe;
+            glPolygonMode(gl::GL_FRONT_AND_BACK, wireframe ? gl::GL_LINE : gl::GL_FILL);
+        }
+        previousW = pressedW;
+
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -385,13 +421,87 @@ int main()
 
         const float aspect = float(framebufferWidth) / float(framebufferHeight);
 
-        gl::glClearColor(0.78f, 0.88f, 0.96f, 1.0f);
-        gl::glClear(gl::GL_COLOR_BUFFER_BIT);
+        const glm::mat4 view = glm::lookAt(
+                               glm::vec3(7.5f, 7.0f, 12.0f),
+                               glm::vec3(0.0f, 0.0f, 0.0f),
+                               glm::vec3(0.0f, 1.0f, 0.0f));
+
+        const glm::mat4 projection = perspective
+                                   ? glm::perspective(glm::radians(70.0f), aspect, 0.1f, 80.0f)
+                                   : glm::ortho(-5.2f * aspect, 5.2f * aspect, -5.2f, 5.2f, 0.1f, 80.0f);
+
+        gl::glClearColor(0.09f, 0.12f, 0.20f, 1.0f);
+        gl::glClearStencil(0);
+        gl::glClear(gl::GL_COLOR_BUFFER_BIT | gl::GL_DEPTH_BUFFER_BIT | gl::GL_STENCIL_BUFFER_BIT);
 
         gl::glUseProgram(program);
+        gl::glUniformMatrix4fv(u.view, 1, gl::GL_FALSE, glm::value_ptr(view));
+        gl::glUniformMatrix4fv(u.projection, 1, gl::GL_FALSE, glm::value_ptr(projection));
+        gl::glUniform1i(u.shadowPass, 0);
 
-        std::string title = randomString(30);
-        glfwSetWindowTitle(window, title.c_str());
+        const float t = static_cast<float>(glfwGetTime());
+
+        // Prepare the six models & use same positions when drawing their shadows and the objects.
+        const glm::mat4 spinningCube = glm::rotate(
+                                       glm::translate(glm::mat4(1.0f), {-3.0f, 0.0f, 1.65f}),
+                                       t, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        const glm::mat4 stillCube = glm::translate(glm::mat4(1.0f), {-3.0f, 0.0f, -1.65f});
+
+        const glm::mat4 movingSphere = glm::translate(
+                                       glm::mat4(1.0f),
+                                       {
+                                           0.55f * std::sin(t),
+                                           0.20f * std::sin(1.7f * t),
+                                           1.65f + 0.45f * std::cos(t)
+                                       });
+
+        const glm::mat4 stillSphere = glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, -1.65f});
+
+        const float pulse = 0.85f + 0.25f * std::sin(2.2f * t);
+        const glm::mat4 pulsingPyramid = glm::scale(
+                                         glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, 1.65f}),
+                                         glm::vec3(pulse));
+
+        const glm::mat4 stillPyramid = glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, -1.65f});
+
+        const std::array<SceneObject, 6> objects = {{
+            {&cube, spinningCube, {0.93f, 0.37f, 0.32f}},
+            {&cube, stillCube, {0.31f, 0.64f, 0.91f}},
+            {&sphere, movingSphere, {0.99f, 0.77f, 0.36f}},
+            {&sphere, stillSphere, {0.36f, 0.82f, 0.66f}},
+            {&pyramid, pulsingPyramid, {0.76f, 0.52f, 0.97f}},
+            {&pyramid, stillPyramid, {0.96f, 0.57f, 0.33f}}
+        }};
+
+        // floor
+        drawMesh(floor, u, glm::mat4(1.0f), {0.40f, 0.46f, 0.55f});
+
+        // shadows
+        gl::glEnable(gl::GL_STENCIL_TEST);
+        gl::glStencilMask(0xFF);
+        gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
+        gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
+        gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
+        gl::glEnable(gl::GL_BLEND);
+        gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
+        gl::glUniform1i(u.shadowPass, 1);
+
+        for (const SceneObject& object : objects)
+        {
+            drawMesh(*object.mesh, u, object.model, object.color);
+        }
+
+        gl::glUniform1i(u.shadowPass, 0);
+        gl::glDisable(gl::GL_BLEND);
+        gl::glDisable(gl::GL_STENCIL_TEST);
+        gl::glDepthMask(gl::GL_TRUE);
+
+        // draw the objects
+        for (const SceneObject& object : objects)
+        {
+            drawMesh(*object.mesh, u, object.model, object.color);
+        }
 
         // OpenGL error checking
         gl::GLenum error;
@@ -404,12 +514,12 @@ int main()
     }
 
     // Clean up GPU resources
-    gl::glDeleteBuffers(1, &vbo);
-    gl::glDeleteVertexArrays(1, &vao);
+    destroyMesh(floor);
+    destroyMesh(pyramid);
+    destroyMesh(sphere);
+    destroyMesh(cube);
     gl::glDeleteProgram(program);
-
     glfwDestroyWindow(window);
     glfwTerminate();
-
     return 0;
 }
