@@ -14,9 +14,12 @@ void main()
         return;
     }
 
+    // renormalize just in case
     vec3 normal = normalize(vNormal);
     vec3 lightDirection = normalize(vec3(-0.5, 0.9, 0.7));
 
+    // 1 is full bright, 0.35 min bright
+    // max to clamp negatives (imagine negative light lmao)
     float diffuse = max(dot(normal, lightDirection), 0.0);
     float brightness = 0.35 + 0.65 * diffuse;
 

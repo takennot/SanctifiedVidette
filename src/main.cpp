@@ -19,8 +19,7 @@
 #include <vector>
 
 // p - position
-// n - normal
-// maybe add tex coords later
+// n - normal (direction)
 struct Vertex
 {
     float px, py, pz;
@@ -141,12 +140,18 @@ gl::GLuint createProgram(const std::string& vertexSource, const std::string& fra
 }
 
 // helper
+// converts vec3s to vertex + append
 void addVertex(MeshData& meshData, glm::vec3 p, glm::vec3 n)
 {
     meshData.vertices.push_back({p.x, p.y, p.z, n.x, n.y, n.z});
 }
 
-// 1 quad = 2 indexed triangles I think?
+// b - a is the edge from a to b.
+// c - a is the edge from a to c.
+// Their cross product points out of the face.
+// Normalize makes it length 1.
+// Every vertex gets same normal because its same face bruh
+// Why duplicate vertices? Because im stupid, thats why. Cube corner has 3 different face directions, so 3 normals. 1 Vertex = 1 normal. So duplicate that shit.
 void addQuad(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d)
 {
     const glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
@@ -176,6 +181,8 @@ void addTriangle(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c)
     });
 }
 
+// s is half size
+// centered on the origin
 MeshData makeCube()
 {
     MeshData md;
@@ -204,34 +211,53 @@ MeshData makePyramid()
     addTriangle(md, b, c, tip);
     addTriangle(md, c, d, tip);
     addTriangle(md, d, a, tip);
-    addQuad(md, d, c, b, a); // bottom face
+    addQuad(md, d, c, b, a); // bottom face reversed so that normal points down instead of up
 
     return md;
 }
 
 // OOOOOO CHECK THIS OUT: https://www.songho.ca/opengl/gl_sphere.html
+// theta is angle down from north pole, 0 to pi
+// phi is angle around vertical axis, 0 to 2pi
+// cos(theta) is height(y), sin(theta) is how far from vertical axis we are (ring radius), cos(phi) & sin(phi) spread around the ring. Result should always have length 1.
+// Vertices are stored by stacks, each stack having slices + 1 vertices. So vertex (stack y, slice x) has index y * (slices + 1) + x
+//
 MeshData makeSphere(int stacks = 24, int slices = 32)
 {
     MeshData md;
     constexpr float pi = 3.14159265358979323846f;
     const float radius = 0.7f;
 
+    // because loops use <= stacks/slices, there should be (stacks+1) * (slices+1) vertices
+
     for (int y = 0; y <= stacks; ++y)
     {
+        // y / stacks = fraction from 0 to 1, to sweep evenly
         const float theta = pi * float(y) / float(stacks);
         for (int x = 0; x <= slices; ++x)
         {
             const float phi = 2.0f * pi * float(x) / float(slices);
+            // cos(theta) is y aka height. 0 to 1
+            // sin(theta) is how wide the stack is at that height. 0 to 1
+            // Where on the stack - if stack is just a circle and circle is (cos(phi), sin(phi)), then multiply by the stack size
+            // x = sin(theta)*cos(phi)
+            // z = sin(theta)*sin(phi)
             const glm::vec3 normal
             {
                 std::sin(theta) * std::cos(phi),
                 std::cos(theta),
                 std::sin(theta) * std::sin(phi)
             };
+            // On a sphere the direction from the center to a surface point is the outward normal
+            // Position is that normal stretched to radius
             addVertex(md, radius * normal, normal);
         }
     }
 
+    // if a is current vertex
+    // b is a + (slices + 1) aka vertex directly below the current one
+    // a (top left), a+1 (top right), b (bottom left), b+1 (bottom right)
+    // index = y * (slices + 1) + x
     for (int y = 0; y < stacks; ++y)
     {
         for (int x = 0; x < slices; ++x)
@@ -249,6 +275,7 @@ MeshData makeSphere(int stacks = 24, int slices = 32)
     return md;
 }
 
+// Do I REALLY have to explain this???
 MeshData makeFloor()
 {
     MeshData md;
@@ -261,27 +288,34 @@ Mesh uploadMesh(const MeshData& meshData)
 {
     Mesh mesh;
 
+    // get handles, bind (make active) vao
     mesh.indexCount = static_cast<gl::GLsizei>(meshData.indices.size());
     gl::glGenVertexArrays(1, &mesh.vao);
     gl::glGenBuffers(1, &mesh.vbo);
     gl::glGenBuffers(1, &mesh.ebo);
     gl::glBindVertexArray(mesh.vao);
 
+    // bind vbo, copy vertex bytes to gpu
     gl::glBindBuffer(gl::GL_ARRAY_BUFFER, mesh.vbo);
     gl::glBufferData(gl::GL_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.vertices.size() * sizeof(Vertex)), meshData.vertices.data(), gl::GL_STATIC_DRAW);
 
+    // same but ebo
+    // apparently ebo binding gets remembered by vao, cool
     gl::glBindBuffer(gl::GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
     gl::glBufferData(gl::GL_ELEMENT_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.indices.size() * sizeof(std::uint32_t)), meshData.indices.data(), gl::GL_STATIC_DRAW);
 
+    // attribute number (0/1 bc layout lcoation), how many components (3), type, normalize ints, stride (24 bytes from one vertex to next), offset
     gl::glVertexAttribPointer(0, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), nullptr);
     gl::glEnableVertexAttribArray(0);
     gl::glVertexAttribPointer(1, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(3 * sizeof(float)));
     gl::glEnableVertexAttribArray(1);
+    // unbind so nothing changes it, just in case, you know
     gl::glBindVertexArray(0);
 
     return mesh;
 }
 
+// helper, nuffsaid
 void destroyMesh(const Mesh& m)
 {
     gl::glDeleteBuffers(1, &m.ebo);
@@ -289,15 +323,19 @@ void destroyMesh(const Mesh& m)
     gl::glDeleteVertexArrays(1, &m.vao);
 }
 
-// wip
 void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model, const glm::vec3& color)
 {
+    // glDrawElements: draw triangles, using indexCount indices of type uint, starting at offset 0 of the bound EBO.
+    // args - location (u.model), count (1 matrix), transpose (no), float pointer value
+    // no need to transpose because glm & opengl are both column major matrices
     gl::glUniformMatrix4fv(u.model, 1, gl::GL_FALSE, glm::value_ptr(model));
     gl::glUniform3f(u.color, color.r, color.g, color.b);
     gl::glBindVertexArray(mesh.vao);
+    // draw mode, count, type, offset
     gl::glDrawElements(gl::GL_TRIANGLES, mesh.indexCount, gl::GL_UNSIGNED_INT, nullptr);
 }
 
+// reserved for future :)
 std::string randomString(size_t length)
 {
     static std::mt19937 rng(std::random_device{}());
@@ -314,6 +352,7 @@ std::string randomString(size_t length)
     return result;
 }
 
+// reserved for future :)
 Color randomColor()
 {
     static std::mt19937 rng(std::random_device{}());
@@ -329,7 +368,9 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    // 4x msaa
     glfwWindowHint(GLFW_SAMPLES, 4);
+    // 8 bit stencil buffer for shadows
     glfwWindowHint(GLFW_STENCIL_BITS, 8);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
@@ -343,12 +384,15 @@ int main()
     }
 
     glfwMakeContextCurrent(window);
+    // vsync, swapping waits for monitor refresh
     glfwSwapInterval(1);
 
     // glbinding provides access to OpenGL functions
     glbinding::initialize(glfwGetProcAddress);
 
+    // per pixel, keep only the closest thing
     gl::glEnable(gl::GL_DEPTH_TEST);
+    // turn on aa
     gl::glEnable(gl::GL_MULTISAMPLE);
 
     // Load and compile GLSL
@@ -421,19 +465,27 @@ int main()
 
         const float aspect = float(framebufferWidth) / float(framebufferHeight);
 
+        // view matrix aka camera
+        // look at args - camera pos, camera target dir, up
         const glm::mat4 view = glm::lookAt(
                                glm::vec3(7.5f, 7.0f, 12.0f),
                                glm::vec3(0.0f, 0.0f, 0.0f),
                                glm::vec3(0.0f, 1.0f, 0.0f));
 
+        // projection matrix
+        // 70 fov
+        // perspective is weird - matrix copies depth to w coord. After vertex shader, gpu divides x & y by w to get that distortion.
+        // ortho is weirder - box 10.4 tall and 10.4 * aspect wide, but this time no w division so kinda mapping straight to screen?
         const glm::mat4 projection = perspective
                                    ? glm::perspective(glm::radians(70.0f), aspect, 0.1f, 80.0f)
                                    : glm::ortho(-5.2f * aspect, 5.2f * aspect, -5.2f, 5.2f, 0.1f, 80.0f);
 
+        // clear last frame
         gl::glClearColor(0.09f, 0.12f, 0.20f, 1.0f);
         gl::glClearStencil(0);
         gl::glClear(gl::GL_COLOR_BUFFER_BIT | gl::GL_DEPTH_BUFFER_BIT | gl::GL_STENCIL_BUFFER_BIT);
 
+        // set view & projection, same for all objects anyway
         gl::glUseProgram(program);
         gl::glUniformMatrix4fv(u.view, 1, gl::GL_FALSE, glm::value_ptr(view));
         gl::glUniformMatrix4fv(u.projection, 1, gl::GL_FALSE, glm::value_ptr(projection));
@@ -442,12 +494,14 @@ int main()
         const float t = static_cast<float>(glfwGetTime());
 
         // Prepare the six models & use same positions when drawing their shadows and the objects.
+        // rotate first, then move
         const glm::mat4 spinningCube = glm::rotate(
                                        glm::translate(glm::mat4(1.0f), {-3.0f, 0.0f, 1.65f}),
                                        t, glm::vec3(0.0f, 1.0f, 0.0f));
 
         const glm::mat4 stillCube = glm::translate(glm::mat4(1.0f), {-3.0f, 0.0f, -1.65f});
 
+        // use sin cos to get a smooooth wave
         const glm::mat4 movingSphere = glm::translate(
                                        glm::mat4(1.0f),
                                        {
@@ -458,6 +512,8 @@ int main()
 
         const glm::mat4 stillSphere = glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, -1.65f});
 
+        // sin is -1 to 1, so pulse is 0.6 to 1.1
+        // First scale, then move
         const float pulse = 0.85f + 0.25f * std::sin(2.2f * t);
         const glm::mat4 pulsingPyramid = glm::scale(
                                          glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, 1.65f}),
@@ -465,6 +521,7 @@ int main()
 
         const glm::mat4 stillPyramid = glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, -1.65f});
 
+        // mesh pointer, matrix, color
         const std::array<SceneObject, 6> objects = {{
             {&cube, spinningCube, {0.93f, 0.37f, 0.32f}},
             {&cube, stillCube, {0.31f, 0.64f, 0.91f}},
@@ -474,16 +531,31 @@ int main()
             {&pyramid, stillPyramid, {0.96f, 0.57f, 0.33f}}
         }};
 
+
+        // floor is first so it writes depth & color
+        // then shadows on top of floor + objects after can cover them
+        // objects last
+
         // floor
         drawMesh(floor, u, glm::mat4(1.0f), {0.40f, 0.46f, 0.55f});
 
         // shadows
+        // enable per pixel counter
         gl::glEnable(gl::GL_STENCIL_TEST);
+        // write to all 8 bits
         gl::glStencilMask(0xFF);
+        // pass only if counter is 0
         gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
+        // If stencil fails: keep. If depth fails: keep. If both pass: add 1
         gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
+        // Shadows don't write depth, so they can't block anything drawn later
         gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
+        // for transparency
         gl::glEnable(gl::GL_BLEND);
+        // shadow * alpha + floor * (1 - alpha)
+        // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
+        // "Transparency is best implemented using blend function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)" - straight up yoinked from docs
+        // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
         gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
         gl::glUniform1i(u.shadowPass, 1);
 
