@@ -1,3 +1,4 @@
+#include "glbinding/gl/enum.h"
 #include "glbinding/gl/functions.h"
 #include "glbinding/gl/types.h"
 #include <GLFW/glfw3.h>
@@ -6,6 +7,7 @@
 #include <glbinding/glbinding.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -17,20 +19,11 @@
 #include <string>
 #include <random>
 #include <vector>
-
-// p - position
-// n - normal (direction)
-struct Vertex
-{
-    float px, py, pz;
-    float nx, ny, nz;
-};
-
-struct MeshData
-{
-    std::vector<Vertex> vertices;
-    std::vector<std::uint32_t> indices;
-};
+#include "mesh_data.hpp"
+#define TINYOBJLOADER_IMPLEMENTATION
+// TINYOBJLOADER_USE_MAPBOX_EARCUT: Enable better triangulation. Requires C++11
+//#define TINYOBJLOADER_USE_MAPBOX_EARCUT
+#include <tiny_obj_loader.h>
 
 struct Mesh
 {
@@ -419,16 +412,110 @@ int main()
         gl::glGetUniformLocation(program, "uShadowPass")
     };
 
-    const Mesh cube = uploadMesh(makeCube());
-    const Mesh sphere = uploadMesh(makeSphere());
-    const Mesh pyramid = uploadMesh(makePyramid());
-    const Mesh floor = uploadMesh(makeFloor());
+    // const Mesh cube = uploadMesh(makeCube());
+    // const Mesh sphere = uploadMesh(makeSphere());
+    // const Mesh pyramid = uploadMesh(makePyramid());
+    // const Mesh floor = uploadMesh(makeFloor());
 
     bool perspective = true;
     bool previousP = false;
 
     bool wireframe = false;
     bool previousW = false;
+
+    tinyobj::attrib_t attributes;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warnings;
+    std::string errors;
+    std::string modelPath = "assets/bunny.obj";
+
+    bool ret = tinyobj::LoadObj(&attributes, &shapes, &materials, &warnings, &errors, modelPath.c_str());
+
+    if (!warnings.empty())
+    {
+      std::cout << warnings << std::endl;
+    }
+
+    if (!errors.empty())
+    {
+      std::cerr << errors << std::endl;
+    }
+
+    if (!ret)
+    {
+      exit(1);
+    }
+
+
+    MeshData bunnyData;
+
+    for (const auto& shape : shapes)
+    {
+        const auto& indices = shape.mesh.indices;
+
+        // TinyObjLoader triangulates faces by default.
+        for (size_t j = 0; j + 2 < indices.size(); j += 3)
+        {
+            glm::vec3 positions[3];
+
+            for (int k = 0; k < 3; ++k)
+            {
+                const auto& idx = indices[j + k];
+                const size_t v = static_cast<size_t>(idx.vertex_index) * 3;
+
+                positions[k] = {
+                    attributes.vertices[v],
+                    attributes.vertices[v + 1],
+                    attributes.vertices[v + 2]
+                };
+            }
+
+            // Fallback normal for OBJ files without normals
+            glm::vec3 cross = glm::cross(
+                positions[1] - positions[0],
+                positions[2] - positions[0]
+            );
+
+            glm::vec3 faceNormal = glm::dot(cross, cross) > 1e-12f ? glm::normalize(cross) : glm::vec3(0.0f, 1.0f, 0.0f);
+
+            const std::uint32_t start = static_cast<std::uint32_t>(bunnyData.vertices.size());
+
+            for (int k = 0; k < 3; ++k)
+            {
+                const auto& idx = indices[j + k];
+                glm::vec3 normal = faceNormal;
+
+                if (idx.normal_index >= 0)
+                {
+                    const size_t n = static_cast<size_t>(idx.normal_index) * 3;
+
+                    if (n + 2 < attributes.normals.size())
+                    {
+                        normal = {
+                            attributes.normals[n],
+                            attributes.normals[n + 1],
+                            attributes.normals[n + 2]
+                        };
+                    }
+                }
+
+                addVertex(bunnyData, positions[k], normal);
+            }
+
+            bunnyData.indices.insert(
+                bunnyData.indices.end(),
+                {start, start + 1, start + 2}
+            );
+        }
+    }
+
+    const Mesh bunny = uploadMesh(bunnyData);
+
+    // 0 fill
+    // 1 line
+    // 2 point
+    int currentMode = 0;
 
     while (!glfwWindowShouldClose(window))
     {
@@ -449,7 +536,21 @@ int main()
         if (pressedW && !previousW)
         {
             wireframe = !wireframe;
-            glPolygonMode(gl::GL_FRONT_AND_BACK, wireframe ? gl::GL_LINE : gl::GL_FILL);
+
+            if (currentMode == 0) {
+                currentMode = 1;
+                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_LINE);
+            }
+            else if (currentMode == 1) {
+                currentMode = 2;
+                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_POINT);
+            }
+            else if (currentMode == 2) {
+                currentMode = 0;
+                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL);
+            }
+
+            //glPolygonMode(gl::GL_FRONT_AND_BACK, wireframe ? gl::GL_LINE : gl::GL_FILL);
         }
         previousW = pressedW;
 
@@ -477,12 +578,12 @@ int main()
         // perspective is weird - matrix copies depth to w coord. After vertex shader, gpu divides x & y by w to get that distortion.
         // ortho is weirder - box 10.4 tall and 10.4 * aspect wide, but this time no w division so kinda mapping straight to screen?
         const glm::mat4 projection = perspective
-                                   ? glm::perspective(glm::radians(70.0f), aspect, 0.1f, 80.0f)
+                                   ? glm::perspective(glm::radians(10.0f), aspect, 0.1f, 80.0f)
                                    : glm::ortho(-5.2f * aspect, 5.2f * aspect, -5.2f, 5.2f, 0.1f, 80.0f);
 
-        // clear last frame
+//         // clear last frame
         gl::glClearColor(0.09f, 0.12f, 0.20f, 1.0f);
-        gl::glClearStencil(0);
+        // gl::glClearStencil(0);
         gl::glClear(gl::GL_COLOR_BUFFER_BIT | gl::GL_DEPTH_BUFFER_BIT | gl::GL_STENCIL_BUFFER_BIT);
 
         // set view & projection, same for all objects anyway
@@ -522,14 +623,14 @@ int main()
         const glm::mat4 stillPyramid = glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, -1.65f});
 
         // mesh pointer, matrix, color
-        const std::array<SceneObject, 6> objects = {{
-            {&cube, spinningCube, {0.93f, 0.37f, 0.32f}},
-            {&cube, stillCube, {0.31f, 0.64f, 0.91f}},
-            {&sphere, movingSphere, {0.99f, 0.77f, 0.36f}},
-            {&sphere, stillSphere, {0.36f, 0.82f, 0.66f}},
-            {&pyramid, pulsingPyramid, {0.76f, 0.52f, 0.97f}},
-            {&pyramid, stillPyramid, {0.96f, 0.57f, 0.33f}}
-        }};
+        // const std::array<SceneObject, 6> objects = {{
+        //     {&cube, spinningCube, {0.93f, 0.37f, 0.32f}},
+        //     {&cube, stillCube, {0.31f, 0.64f, 0.91f}},
+        //     {&sphere, movingSphere, {0.99f, 0.77f, 0.36f}},
+        //     {&sphere, stillSphere, {0.36f, 0.82f, 0.66f}},
+        //     {&pyramid, pulsingPyramid, {0.76f, 0.52f, 0.97f}},
+        //     {&pyramid, stillPyramid, {0.96f, 0.57f, 0.33f}}
+        // }};
 
 
         // floor is first so it writes depth & color
@@ -537,32 +638,32 @@ int main()
         // objects last
 
         // floor
-        drawMesh(floor, u, glm::mat4(1.0f), {0.40f, 0.46f, 0.55f});
+        //drawMesh(floor, u, glm::mat4(1.0f), {0.40f, 0.46f, 0.55f});
 
         // shadows
-        // enable per pixel counter
-        gl::glEnable(gl::GL_STENCIL_TEST);
-        // write to all 8 bits
-        gl::glStencilMask(0xFF);
-        // pass only if counter is 0
-        gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
-        // If stencil fails: keep. If depth fails: keep. If both pass: add 1
-        gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
-        // Shadows don't write depth, so they can't block anything drawn later
-        gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
-        // for transparency
-        gl::glEnable(gl::GL_BLEND);
-        // shadow * alpha + floor * (1 - alpha)
-        // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
-        // "Transparency is best implemented using blend function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)" - straight up yoinked from docs
-        // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
-        gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
-        gl::glUniform1i(u.shadowPass, 1);
-
-        for (const SceneObject& object : objects)
-        {
-            drawMesh(*object.mesh, u, object.model, object.color);
-        }
+//         // enable per pixel counter
+//         gl::glEnable(gl::GL_STENCIL_TEST);
+//         // write to all 8 bits
+//         gl::glStencilMask(0xFF);
+//         // pass only if counter is 0
+//         gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
+//         // If stencil fails: keep. If depth fails: keep. If both pass: add 1
+//         gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
+//         // Shadows don't write depth, so they can't block anything drawn later
+//         gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
+//         // for transparency
+//         gl::glEnable(gl::GL_BLEND);
+//         // shadow * alpha + floor * (1 - alpha)
+//         // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
+//         // "Transparency is best implemented using blend function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)" - straight up yoinked from docs
+//         // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
+//         gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
+//         gl::glUniform1i(u.shadowPass, 1);
+//
+//         for (const SceneObject& object : objects)
+//         {
+//             //drawMesh(*object.mesh, u, object.model, object.color);
+//         }
 
         gl::glUniform1i(u.shadowPass, 0);
         gl::glDisable(gl::GL_BLEND);
@@ -570,10 +671,12 @@ int main()
         gl::glDepthMask(gl::GL_TRUE);
 
         // draw the objects
-        for (const SceneObject& object : objects)
-        {
-            drawMesh(*object.mesh, u, object.model, object.color);
-        }
+        // for (const SceneObject& object : objects)
+        // {
+        //     drawMesh(*object.mesh, u, object.model, object.color);
+        // }
+
+        drawMesh(bunny, u, glm::mat4(1.0f), glm::vec3(0.8f, 0.8f, 0.8f));
 
         // OpenGL error checking
         gl::GLenum error;
@@ -586,10 +689,11 @@ int main()
     }
 
     // Clean up GPU resources
-    destroyMesh(floor);
-    destroyMesh(pyramid);
-    destroyMesh(sphere);
-    destroyMesh(cube);
+    // destroyMesh(floor);
+    // destroyMesh(pyramid);
+    // destroyMesh(sphere);
+    // destroyMesh(cube);
+    destroyMesh(bunny);
     gl::glDeleteProgram(program);
     glfwDestroyWindow(window);
     glfwTerminate();

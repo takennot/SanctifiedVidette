@@ -20,10 +20,12 @@ add_requires("imgui", {
 
 add_requires("glm")
 
+add_requires("tinyobjloader")
+
 target("SanctifiedVidette")
     set_kind("binary")
     add_files("src/*.cpp")
-    add_packages("glfw", "glbinding", "imgui", "glm")
+    add_packages("glfw", "glbinding", "imgui", "glm", "tinyobjloader")
     add_defines("GLFW_INCLUDE_NONE")
 
     if is_plat("windows") then
@@ -36,4 +38,7 @@ target("SanctifiedVidette")
         local shaderdir = path.join(target:targetdir(), "shaders")
         os.mkdir(shaderdir)
         os.cp(path.join(os.projectdir(), "shaders", "*"), shaderdir)
+        local assetsdir = path.join(target:targetdir(), "assets")
+        os.mkdir(assetsdir)
+        os.cp(path.join(os.projectdir(), "assets", "*"), assetsdir)
     end)
