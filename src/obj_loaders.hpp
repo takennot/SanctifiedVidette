@@ -11,7 +11,10 @@ struct ObjLoadResult
     std::vector<std::string> warnings;
     std::string error;
 
-    bool ok() const { return error.empty() && !mesh.indices.empty(); }
+    bool ok() const
+    {
+        return error.empty() && !mesh.indices.empty();
+    }
 };
 
 // Both functions accept OBJ contents.
