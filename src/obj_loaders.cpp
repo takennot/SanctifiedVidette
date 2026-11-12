@@ -286,7 +286,164 @@ namespace
 
 ObjLoadResult loadCustomObj(const std::string& contents)
 {
+    ObjLoadResult out;
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec2> texcoords;
+    std::vector<glm::vec3> normals;
+    std::unordered_map<Corner, std::uint32_t, CornerHash> cache;
 
+    // wrap string in istringstream so it behaves like a readable file without reopening the obj file
+    std::istringstream input(contents);
+    std::string line;
+    std::size_t lineNumber = 0;
+
+    while (std::getline(input, line))
+    {
+        ++lineNumber;
+        // wrap this line in a stream so we can extract fields with >>
+        std::istringstream stream(line);
+        std::string keyword;
+
+        // if blank line or comment - skip
+        if (!(stream >> keyword) || keyword[0] == '#')
+        {
+            continue;
+        }
+
+        // i forgot that switch case in c++ can't handle strings uuugh
+        // if object name
+        if (keyword == "o")
+        {
+            std::string name;
+            // discard leading spaces, take remaining name incl. spaces
+            std::getline(stream >> std::ws, name);
+
+            if (name.empty())
+            {
+                warn(out, lineNumber, "empty object name");
+            }
+            else
+            {
+                // multiple "o" sections share one mesh
+                out.objectNames.push_back(name);
+            }
+        }
+        // vertex aka corner aka xyz
+        else if (keyword == "v")
+        {
+            float a[3];
+
+            // if we can read 3 valid floats
+            // append the resulting vec3 to positions
+            if (readFloats(stream, a, 3))
+            {
+                positions.emplace_back(a[0], a[1], a[2]);
+            }
+            else
+            {
+                // keep running if parsing failed, but keep warning for which line failed
+                warn(out, lineNumber, "invalid vertex position");
+            }
+        }
+        // texcoord aka uv
+        else if (keyword == "vt")
+        {
+            float a[2];
+
+            if (readFloats(stream, a, 2))
+            {
+                texcoords.emplace_back(a[0], a[1]);
+            }
+            else
+            {
+                warn(out, lineNumber, "invalid UV coordinates");
+            }
+        }
+        // normal
+        else if (keyword == "vn")
+        {
+            float a[3];
+
+            // almost same as above
+            // if can parse floats - normalize
+            if (readFloats(stream, a, 3))
+            {
+                glm::vec3 n(a[0], a[1], a[2]);
+
+                // check if normal is not near zero
+                if (glm::dot(n, n) > 1e-12f)
+                {
+                    normals.push_back(glm::normalize(n));
+                }
+                else
+                {
+                    // if vec 0 - just use up vec + warning
+                    normals.emplace_back(0.0f, 1.0f, 0.0f);
+                    warn(out, lineNumber, "zero normal");
+                }
+            }
+        }
+        // face
+        else if (keyword == "f")
+        {
+            std::vector<Corner> face;
+            // aka a line, for example 1/2/3 or 1//3
+            std::string token;
+            bool valid = true;
+
+            while (stream >> token)
+            {
+                // stop at comment
+                if (token[0] == '#')
+                {
+                    break;
+                }
+
+                // invalid if 5th corner appears
+                if (face.size() == 4)
+                {
+                    valid = false;
+                    break;
+                }
+                // p=uv=n=1
+                Corner c;
+
+                // check if index is ok
+                if (!parseCorner(token, positions.size(), texcoords.size(), normals.size(), c))
+                {
+                    // if invalid, mark whole face as invalid & exit its token loop.
+                    valid = false;
+                    break;
+                }
+                // if valid, append to face list
+                face.push_back(c);
+            }
+
+            // if invalid, not triangle or not quad
+            // then put warning + skip to next obj line
+            if (!valid || (face.size() != 3 && face.size() != 4))
+            {
+                warn(out, lineNumber, "invalid face, missing/out of range index or unsupported ngon");
+                continue;
+            }
+            // for a valid face, acll emitface to make gpu vertices & 3/6 triangle indices
+            emitFace(out.mesh, face, positions, texcoords, normals, cache);
+        }
+    }
+
+    // no name
+    if (out.objectNames.empty())
+    {
+        out.objectNames.push_back("Unnamed OBJ object");
+    }
+
+    // if no indices at all, error whole thing
+    if (out.mesh.indices.empty())
+    {
+        out.error = "No valid triangle or quad faces in OBJ data";
+    }
+
+    return out;
 }
 
 ObjLoadResult loadTinyObj(const std::string& contents)
