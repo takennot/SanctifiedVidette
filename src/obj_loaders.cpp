@@ -18,6 +18,7 @@
 
 namespace
 {
+    // btw named this obj vertex a Corner to not confuse with my Vertex struct
     struct Corner
     {
         int p = -1, uv = -1, n = -1;
@@ -290,5 +291,141 @@ ObjLoadResult loadCustomObj(const std::string& contents)
 
 ObjLoadResult loadTinyObj(const std::string& contents)
 {
+    ObjLoadResult out;
+    // apparently the way I used tinyobj before was deprecated api
+    // so here is a proper way to do it
+    tinyobj::ObjReader reader;
+    tinyobj::ObjReaderConfig config;
+    config.triangulate = true;
+    // add vertex color support later, but for now disable color parsing
+    config.vertex_color = false;
 
+    // add mtl support later
+    if (!reader.ParseFromString(contents, "", config))
+    {
+        // prefix with TinyObjLoader to see which obj loader failed
+        out.error = "TinyObjLoader: " + reader.Error();
+        if (out.error == "TinyObjLoader: ")
+        {
+            // print generic error message if tinyobj didn't send any details
+            out.error += "could not parse OBJ";
+            return out;
+        }
+    }
+
+    if (!reader.Warning().empty())
+    {
+        // add warnings if there are any
+        out.warnings.push_back(reader.Warning());
+    }
+
+    // get all positions, normals, uvs
+    const auto& attrib = reader.GetAttrib();
+    // get o objects
+    const auto& shapes = reader.GetShapes();
+    std::vector<glm::vec3> positions, normals;
+    std::vector<glm::vec2> texcoords;
+
+    // go through positions
+    // read in triples (xyz) from attrib.vertices
+    // i + 2 < size in case if data is incomplete
+    for (std::size_t i = 0; i + 2 < attrib.vertices.size(); i += 3)
+    {
+        // append one vec3 per 3 input floats
+        positions.emplace_back(attrib.vertices[i], attrib.vertices[i + 1], attrib.vertices[i + 2]);
+    }
+
+    // read uvs, same as above but pairs (uv)
+    for (std::size_t i = 0; i + 1 < attrib.texcoords.size(); i += 2)
+    {
+        texcoords.emplace_back(attrib.texcoords[i], attrib.texcoords[i + 1]);
+    }
+
+    // normals, see above
+    for (std::size_t i = 0; i + 2 < attrib.normals.size(); i += 3)
+    {
+        normals.emplace_back(attrib.normals[i], attrib.normals[i + 1], attrib.normals[i + 2]);
+    }
+
+    // same as custom obj loader
+    std::unordered_map<Corner, std::uint32_t, CornerHash> cache;
+
+    // go through shapes here
+    for (const auto& shape : shapes)
+    {
+        // get obj name
+        out.objectNames.push_back(shape.name.empty() ? "Unnamed OBJ object" : shape.name);
+        // for where current face corner starts
+        std::size_t offset = 0;
+
+        // go through num of vertices of each face
+        for (const unsigned char count : shape.mesh.num_face_vertices)
+        {
+            // ignore not triangles/quads
+            if (count != 3 && count != 4)
+            {
+                // move offset by corner count
+                offset += count;
+                continue;
+            }
+
+            // check just in case if mesh does not contain "count" amount
+            if (offset + count > shape.mesh.indices.size())
+            {
+                out.error = "TinyObjLoader reported truncated face indices";
+                return out;
+            }
+
+            // temp list of converted face-corner references
+            std::vector<Corner> face;
+            bool valid = true;
+
+            // loop through this face's corners
+            for (std::size_t j = 0; j < count; ++j)
+            {
+                // index info for one corner of the current face
+                // j - which corner of the face are we looking at
+                // offset + j - corner position in the list
+                // idx should contain pos, uv & normal indices.
+                const auto& idx = shape.mesh.indices[offset + j];
+                // copy already read indices to Corner struct
+                Corner c{idx.vertex_index, idx.texcoord_index, idx.normal_index};
+
+                // check if pos index is at least 0 & less than pos count
+                // and same for uv & normal
+                if (c.p < 0 || static_cast<std::size_t>(c.p) >= positions.size() ||
+                    (c.uv >= 0 && static_cast<std::size_t>(c.uv) >= texcoords.size()) ||
+                    (c.n >= 0 && static_cast<std::size_t>(c.n) >= normals.size()))
+                {
+                    // if any array entry is out of range - mark as invalid + stop reading its corners
+                    valid = false;
+                    break;
+                }
+                // otherwise append corner to this face's list
+                face.push_back(c);
+            }
+
+            // go to next face
+            offset += count;
+
+            // if valid, use emitFace to make MeshData
+            if (valid)
+            {
+                emitFace(out.mesh, face, positions, texcoords, normals, cache);
+            }
+            else
+            {
+                // warning if invalid
+                out.warnings.push_back("Ignored face with out-of-range indices");
+            }
+        }
+    }
+
+    // if no drawable triangles at this point, just error it idk
+    if (out.mesh.indices.empty())
+    {
+        out.error = "No valid triangle faces returned by TinyObjLoader";
+    }
+
+    return out;
 }
