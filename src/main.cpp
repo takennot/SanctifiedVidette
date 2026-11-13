@@ -19,6 +19,7 @@
 #include <string>
 #include <random>
 #include <vector>
+#include <map>
 
 #include "mesh_data.hpp"
 #include "obj_loaders.hpp"
@@ -559,100 +560,67 @@ int main()
 
     AssetCache cache;
 
+    const bool loaded =
+        cache.add("bunny", "assets/models/bunny.obj", "assets/textures/beastfur.png") &&
+        cache.add("teapot", "assets/models/teapot.obj", "assets/textures/lizard_skin.png") &&
+        cache.add("cat", "assets/models/cat.obj", "assets/textures/cat.png") &&
+        cache.add("fishClown", "assets/models/fishClown.obj", "assets/textures/clownfish.png") &&
+        cache.add("monkey", "assets/models/monkey.obj", "assets/textures/cat.png");
+
+    if (!loaded)
+    {
+        std::cerr << "Required scene assets missing or invalid.\n";
+        cache.clear();
+        gl::glDeleteProgram(program);
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
+    // this should not read disk again
+    cache.add("bunny", "assets/models/bunny.obj", "assets/textures/beastfur.png");
+
+    Mesh floor = uploadMesh(makeFloor());
+    gl::GLuint floorTexture = loadTexture("assets/textures/trak_tile_y.jpg");
+
+    IMGUI_CHECKVERSION();
+
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 460 core");
+
+    // 0 - tinyobj
+    // 1 - custom
+    int selectedLoader = 0;
+    // 0 - front
+    // 1 - back
+    // 2 - both
+    int faceCullMode = 0;
+    bool textured = true;
+    bool showNormals = false;
+    bool animate = true;
     bool perspective = true;
-    bool previousP = false;
-
     bool wireframe = false;
+    bool shadows = true;
+    bool previousP = false;
     bool previousW = false;
+    bool cullFaces = false;
 
-    tinyobj::attrib_t attributes;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warnings;
-    std::string errors;
-    std::string modelPath = "assets/bunny.obj";
+    float lightDirection[3] = {-0.5f, 0.9f, 0.7f};
+    float cameraPos[3] = {7.5f, 7.0f, 12.0f};
+    float cameraTarget[3] = {0.f, 0.f, 0.f};
+    float cameraFOV = 70.f;
 
-    bool ret = tinyobj::LoadObj(&attributes, &shapes, &materials, &warnings, &errors, modelPath.c_str());
-
-    if (!warnings.empty())
-    {
-      std::cout << warnings << std::endl;
-    }
-
-    if (!errors.empty())
-    {
-      std::cerr << errors << std::endl;
-    }
-
-    if (!ret)
-    {
-      exit(1);
-    }
-
-
-    MeshData bunnyData;
-
-    for (const auto& shape : shapes)
-    {
-        const auto& indices = shape.mesh.indices;
-
-        // TinyObjLoader triangulates faces by default.
-        for (size_t j = 0; j + 2 < indices.size(); j += 3)
-        {
-            glm::vec3 positions[3];
-
-            for (int k = 0; k < 3; ++k)
-            {
-                const auto& idx = indices[j + k];
-                const size_t v = static_cast<size_t>(idx.vertex_index) * 3;
-
-                positions[k] = {
-                    attributes.vertices[v],
-                    attributes.vertices[v + 1],
-                    attributes.vertices[v + 2]
-                };
-            }
-
-            // Fallback normal for OBJ files without normals
-            glm::vec3 cross = glm::cross(
-                positions[1] - positions[0],
-                positions[2] - positions[0]
-            );
-
-            glm::vec3 faceNormal = glm::dot(cross, cross) > 1e-12f ? glm::normalize(cross) : glm::vec3(0.0f, 1.0f, 0.0f);
-
-            const std::uint32_t start = static_cast<std::uint32_t>(bunnyData.vertices.size());
-
-            for (int k = 0; k < 3; ++k)
-            {
-                const auto& idx = indices[j + k];
-                glm::vec3 normal = faceNormal;
-
-                if (idx.normal_index >= 0)
-                {
-                    const size_t n = static_cast<size_t>(idx.normal_index) * 3;
-
-                    if (n + 2 < attributes.normals.size())
-                    {
-                        normal = {
-                            attributes.normals[n],
-                            attributes.normals[n + 1],
-                            attributes.normals[n + 2]
-                        };
-                    }
-                }
-
-                addVertex(bunnyData, positions[k], normal);
-            }
-
-            bunnyData.indices.insert(
-                bunnyData.indices.end(),
-                {start, start + 1, start + 2}
-            );
-        }
-    }
-
-    const Mesh bunny = uploadMesh(bunnyData);
+    // name, pos, scale, rotrate
+    const std::array<Instance, 5> instances =
+    {{
+        {"bunny", {-5.0f, kFloorY, -1.5f}, {1.f, 1.f, 1.f}, 0.0f},
+        {"teapot", {-3.0f, kFloorY,  1.8f}, {0.02f, 0.02f, 0.02f}, 0.0f},
+        {"cat", {-0.8f, kFloorY + 2, -1.6f}, {3.0f, 3.0f, 3.0f}, 3.f},
+        {"fishClown", {2.2f, kFloorY + 1, 1.1f}, {10.0f, 10.0f, 10.0f}, 0.f},
+        {"monkey", { 4.8f, kFloorY + 1.5, -1.4f}, {1.1f, 1.1f, 1.1f}, 0.0f}
+    }};
 
     // 0 fill
     // 1 line
@@ -663,6 +631,7 @@ int main()
     {
         glfwPollEvents();
 
+        // move all this to separate handle input stuff
         // Toggle once per P key press
         const bool pressedP = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
 
@@ -691,9 +660,8 @@ int main()
                 currentMode = 0;
                 gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL);
             }
-
-            //glPolygonMode(gl::GL_FRONT_AND_BACK, wireframe ? gl::GL_LINE : gl::GL_FILL);
         }
+
         previousW = pressedW;
 
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -701,8 +669,92 @@ int main()
             glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
 
+        if (cullFaces)
+        {
+            gl::glEnable(gl::GL_CULL_FACE);
+        }
+        else
+        {
+            gl::glDisable(gl::GL_CULL_FACE);
+        }
+
+        switch (faceCullMode)
+        {
+            case 0:
+                glCullFace(gl::GL_FRONT);
+                break;
+            case 1:
+                glCullFace(gl::GL_BACK);
+                break;
+            case 2:
+                glCullFace(gl::GL_FRONT_AND_BACK);
+                break;
+        }
+
+        //imgui
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(340, 370), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Sanctified Vidette | Week 3 | obj loading");
+        ImGui::TextUnformatted("Active OBJ loader:");
+        ImGui::RadioButton("TinyObjLoader", &selectedLoader, 0);
+        ImGui::RadioButton("Custom parser", &selectedLoader, 1);
+        ImGui::Separator();
+        ImGui::Checkbox("Enable Face Culling", &cullFaces);
+        ImGui::TextUnformatted("Face culling mode:");
+        ImGui::RadioButton("Front", &faceCullMode, 0);
+        ImGui::RadioButton("Back", &faceCullMode, 1);
+        ImGui::RadioButton("Both", &faceCullMode, 2);
+        ImGui::Checkbox("Textures", &textured);
+        ImGui::Checkbox("Visualize normals", &showNormals);
+        ImGui::Checkbox("Projected shadows", &shadows);
+        ImGui::Checkbox("Animate objects", &animate);
+        ImGui::Checkbox("Perspective (P)", &perspective);
+        // fix imgui wireframe (might be fixed with separate input handling?)
+        ImGui::TextUnformatted("Wireframe mode:");
+        ImGui::RadioButton("Fill / Solid", &currentMode, 0);
+        ImGui::RadioButton("Lines", &currentMode, 1);
+        ImGui::RadioButton("Points", &currentMode, 2);
+        ImGui::SliderFloat3("Light direction", lightDirection, -1.0f, 1.0f);
+        ImGui::Separator();
+        ImGui::TextUnformatted("Camera");
+        ImGui::SliderFloat3("Camera Position", cameraPos, -20.0f, 20.0f);
+        ImGui::SliderFloat3("Camera Target", cameraTarget, -20.0f, 20.0f);
+        ImGui::SliderFloat("Camera FOV", &cameraFOV, 5.f, 110.f);
+
+        if (lightDirection[1] < 0.1f)
+        {
+            // Shadow projection divides by Y.
+            lightDirection[1] = 0.1f;
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Unique OBJ files read: %d", cache.diskReads());
+        ImGui::Text("Unique OBJ models: %zu", cache.uniqueModels());
+        ImGui::Text("Meshes uploaded at startup: %d", cache.gpuUploads());
+        ImGui::Text("Scene instances: %zu", instances.size());
+
+        if (ImGui::CollapsingHeader("Meshes (triangles)", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            for (const auto& pair : cache.items())
+            {
+                ImGui::BulletText("%s: own %zu / TinyObj %zu", pair.first.c_str(), pair.second.customTriangles, pair.second.externalTriangles);
+            }
+        }
+
+        ImGui::End();
+
         int framebufferWidth, framebufferHeight;
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+
+        if (framebufferWidth <= 0 || framebufferHeight <= 0)
+        {
+            ImGui::Render();
+            glfwSwapBuffers(window);
+            continue;
+        }
 
         gl::glViewport(0, 0, framebufferWidth, framebufferHeight);
 
@@ -711,8 +763,8 @@ int main()
         // view matrix aka camera
         // look at args - camera pos, camera target dir, up
         const glm::mat4 view = glm::lookAt(
-                               glm::vec3(7.5f, 7.0f, 12.0f),
-                               glm::vec3(0.0f, 0.0f, 0.0f),
+                               glm::make_vec3(cameraPos),
+                               glm::make_vec3(cameraTarget),
                                glm::vec3(0.0f, 1.0f, 0.0f));
 
         // projection matrix
@@ -720,105 +772,84 @@ int main()
         // perspective is weird - matrix copies depth to w coord. After vertex shader, gpu divides x & y by w to get that distortion.
         // ortho is weirder - box 10.4 tall and 10.4 * aspect wide, but this time no w division so kinda mapping straight to screen?
         const glm::mat4 projection = perspective
-                                   ? glm::perspective(glm::radians(10.0f), aspect, 0.1f, 80.0f)
+                                   ? glm::perspective(glm::radians(cameraFOV), aspect, 0.1f, 80.0f)
                                    : glm::ortho(-5.2f * aspect, 5.2f * aspect, -5.2f, 5.2f, 0.1f, 80.0f);
 
 //         // clear last frame
         gl::glClearColor(0.09f, 0.12f, 0.20f, 1.0f);
-        // gl::glClearStencil(0);
+        gl::glClearStencil(0);
         gl::glClear(gl::GL_COLOR_BUFFER_BIT | gl::GL_DEPTH_BUFFER_BIT | gl::GL_STENCIL_BUFFER_BIT);
 
         // set view & projection, same for all objects anyway
         gl::glUseProgram(program);
         gl::glUniformMatrix4fv(u.view, 1, gl::GL_FALSE, glm::value_ptr(view));
         gl::glUniformMatrix4fv(u.projection, 1, gl::GL_FALSE, glm::value_ptr(projection));
+
+        glm::vec3 light(lightDirection[0], lightDirection[1], lightDirection[2]);
+        light = glm::normalize(light);
+        gl::glUniform3f(u.lightDirection, light.x, light.y, light.z);
+
+        switch (currentMode)
+        {
+            case 0:
+                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL);
+                break;
+            case 1:
+                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_LINE);
+                break;
+            case 2:
+                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_POINT);
+                break;
+        }
+
+        gl::glUniform1i(u.albedo, 0);
         gl::glUniform1i(u.shadowPass, 0);
 
-        const float t = static_cast<float>(glfwGetTime());
+        drawMesh(floor, u, glm::mat4(1.0f), glm::vec3(1.0f), floorTexture, false, textured, showNormals);
 
-        // Prepare the six models & use same positions when drawing their shadows and the objects.
-        // rotate first, then move
-        const glm::mat4 spinningCube = glm::rotate(
-                                       glm::translate(glm::mat4(1.0f), {-3.0f, 0.0f, 1.65f}),
-                                       t, glm::vec3(0.0f, 1.0f, 0.0f));
+        const float t = animate ? static_cast<float>(glfwGetTime()) : 0.0f;
 
-        const glm::mat4 stillCube = glm::translate(glm::mat4(1.0f), {-3.0f, 0.0f, -1.65f});
+        // lambda to not repeat for loop
+        auto drawInstances = [&](bool shadow)
+        {
+            for (const Instance& instance : instances)
+            {
+                glm::vec3 pos = instance.position;
+                cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
+                                textured, showNormals, instance.rotationSpeed * t,
+                                instance.scale);
+            }
+        };
 
-        // use sin cos to get a smooooth wave
-        const glm::mat4 movingSphere = glm::translate(
-                                       glm::mat4(1.0f),
-                                       {
-                                           0.55f * std::sin(t),
-                                           0.20f * std::sin(1.7f * t),
-                                           1.65f + 0.45f * std::cos(t)
-                                       });
+        if (shadows)
+        {
+            // shadows
+            // enable per pixel counter
+            gl::glEnable(gl::GL_STENCIL_TEST);
+            // write to all 8 bits
+            gl::glStencilMask(0xFF);
+            // pass only if counter is 0
+            gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
+            // If stencil fails: keep. If depth fails: keep. If both pass: add 1
+            gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
+            // Shadows don't write depth, so they can't block anything drawn later
+            gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
+            // for transparency
+            gl::glEnable(gl::GL_BLEND);
+            // shadow * alpha + floor * (1 - alpha)
+            // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
+            // "Transparency is best implemented using blend function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)" - straight up yoinked from docs
+            // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
+            gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
+            drawInstances(true);
+            gl::glDisable(gl::GL_BLEND);
+            gl::glDisable(gl::GL_STENCIL_TEST);
+            gl::glDepthMask(gl::GL_TRUE);
+        }
 
-        const glm::mat4 stillSphere = glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, -1.65f});
-
-        // sin is -1 to 1, so pulse is 0.6 to 1.1
-        // First scale, then move
-        const float pulse = 0.85f + 0.25f * std::sin(2.2f * t);
-        const glm::mat4 pulsingPyramid = glm::scale(
-                                         glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, 1.65f}),
-                                         glm::vec3(pulse));
-
-        const glm::mat4 stillPyramid = glm::translate(glm::mat4(1.0f), {3.0f, 0.0f, -1.65f});
-
-        // mesh pointer, matrix, color
-        // const std::array<SceneObject, 6> objects = {{
-        //     {&cube, spinningCube, {0.93f, 0.37f, 0.32f}},
-        //     {&cube, stillCube, {0.31f, 0.64f, 0.91f}},
-        //     {&sphere, movingSphere, {0.99f, 0.77f, 0.36f}},
-        //     {&sphere, stillSphere, {0.36f, 0.82f, 0.66f}},
-        //     {&pyramid, pulsingPyramid, {0.76f, 0.52f, 0.97f}},
-        //     {&pyramid, stillPyramid, {0.96f, 0.57f, 0.33f}}
-        // }};
-
-
-        // floor is first so it writes depth & color
-        // then shadows on top of floor + objects after can cover them
-        // objects last
-
-        // floor
-        //drawMesh(floor, u, glm::mat4(1.0f), {0.40f, 0.46f, 0.55f});
-
-        // shadows
-//         // enable per pixel counter
-//         gl::glEnable(gl::GL_STENCIL_TEST);
-//         // write to all 8 bits
-//         gl::glStencilMask(0xFF);
-//         // pass only if counter is 0
-//         gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
-//         // If stencil fails: keep. If depth fails: keep. If both pass: add 1
-//         gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
-//         // Shadows don't write depth, so they can't block anything drawn later
-//         gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
-//         // for transparency
-//         gl::glEnable(gl::GL_BLEND);
-//         // shadow * alpha + floor * (1 - alpha)
-//         // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
-//         // "Transparency is best implemented using blend function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)" - straight up yoinked from docs
-//         // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
-//         gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
-//         gl::glUniform1i(u.shadowPass, 1);
-//
-//         for (const SceneObject& object : objects)
-//         {
-//             //drawMesh(*object.mesh, u, object.model, object.color);
-//         }
-
-        gl::glUniform1i(u.shadowPass, 0);
-        gl::glDisable(gl::GL_BLEND);
-        gl::glDisable(gl::GL_STENCIL_TEST);
-        gl::glDepthMask(gl::GL_TRUE);
-
-        // draw the objects
-        // for (const SceneObject& object : objects)
-        // {
-        //     drawMesh(*object.mesh, u, object.model, object.color);
-        // }
-
-        drawMesh(bunny, u, glm::mat4(1.0f), glm::vec3(0.8f, 0.8f, 0.8f));
+        drawInstances(false);
+        gl::glBindVertexArray(0);
+        gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL); // don't wireframe imgui
 
         // OpenGL error checking
         gl::GLenum error;
@@ -827,15 +858,18 @@ int main()
             std::cerr << "OpenGL error: 0x" << std::hex << static_cast<unsigned int>(error) << std::dec << '\n';
         }
 
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
     }
 
     // Clean up GPU resources
-    // destroyMesh(floor);
-    // destroyMesh(pyramid);
-    // destroyMesh(sphere);
-    // destroyMesh(cube);
-    destroyMesh(bunny);
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    cache.clear();
+    destroyMesh(floor);
+    gl::glDeleteTextures(1, &floorTexture);
     gl::glDeleteProgram(program);
     glfwDestroyWindow(window);
     glfwTerminate();
