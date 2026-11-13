@@ -496,6 +496,7 @@ namespace
 
 int main()
 {
+    glfwSetErrorCallback(glfwErrorCallback);
     if (!glfwInit()) return 1;
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -507,7 +508,7 @@ int main()
     glfwWindowHint(GLFW_STENCIL_BITS, 8);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    GLFWwindow* window = glfwCreateWindow(1000, 1000, "Sanctified Vidette", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Sanctified Vidette", nullptr, nullptr);
 
     if (!window)
     {
@@ -529,8 +530,8 @@ int main()
     gl::glEnable(gl::GL_MULTISAMPLE);
 
     // Load and compile GLSL
-    std::string vertexSource = readFile("shaders/a2.vert");
-    std::string fragmentSource = readFile("shaders/a2.frag");
+    std::string vertexSource = readFile("shaders/a3.vert");
+    std::string fragmentSource = readFile("shaders/a3.frag");
 
     gl::GLuint program = createProgram(vertexSource, fragmentSource);
 
@@ -543,19 +544,20 @@ int main()
 
     gl::glUseProgram(program);
 
-    Uniforms u
+    const Uniforms u =
     {
         gl::glGetUniformLocation(program, "uModel"),
         gl::glGetUniformLocation(program, "uView"),
         gl::glGetUniformLocation(program, "uProjection"),
         gl::glGetUniformLocation(program, "uColor"),
-        gl::glGetUniformLocation(program, "uShadowPass")
+        gl::glGetUniformLocation(program, "uShadowPass"),
+        gl::glGetUniformLocation(program, "uUseTexture"),
+        gl::glGetUniformLocation(program, "uShowNormals"),
+        gl::glGetUniformLocation(program, "uLightDirection"),
+        gl::glGetUniformLocation(program, "uAlbedo")
     };
 
-    // const Mesh cube = uploadMesh(makeCube());
-    // const Mesh sphere = uploadMesh(makeSphere());
-    // const Mesh pyramid = uploadMesh(makePyramid());
-    // const Mesh floor = uploadMesh(makeFloor());
+    AssetCache cache;
 
     bool perspective = true;
     bool previousP = false;
