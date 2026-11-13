@@ -22,10 +22,12 @@ add_requires("glm")
 
 add_requires("tinyobjloader")
 
+add_requires("stb")
+
 target("SanctifiedVidette")
     set_kind("binary")
     add_files("src/*.cpp")
-    add_packages("glfw", "glbinding", "imgui", "glm", "tinyobjloader")
+    add_packages("glfw", "glbinding", "imgui", "glm", "tinyobjloader", "stb")
     add_defines("GLFW_INCLUDE_NONE")
 
     if is_plat("windows") then

@@ -19,339 +19,479 @@
 #include <string>
 #include <random>
 #include <vector>
+
 #include "mesh_data.hpp"
-#define TINYOBJLOADER_IMPLEMENTATION
-// TINYOBJLOADER_USE_MAPBOX_EARCUT: Enable better triangulation. Requires C++11
-//#define TINYOBJLOADER_USE_MAPBOX_EARCUT
-#include <tiny_obj_loader.h>
+#include "obj_loaders.hpp"
 
-struct Mesh
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+namespace
 {
-    gl::GLuint vbo = 0, vao = 0, ebo = 0;
-    gl::GLsizei indexCount = 0;
-};
+    constexpr float kFloorY = -0.8f;
 
-struct Uniforms
-{
-    gl::GLint model;
-    gl::GLint view;
-    gl::GLint projection;
-    gl::GLint color;
-    gl::GLint shadowPass;
-};
-
-struct Color
-{
-    float r, g, b;
-};
-
-struct SceneObject
-{
-    const Mesh* mesh;
-    glm::mat4 model;
-    glm::vec3 color;
-};
-
-// Read GLSL shader from disk
-std::string readFile(const char* path)
-{
-    std::ifstream file(path);
-
-    if (!file)
+    struct Mesh
     {
-        std::cerr << "Cannot open: " << path << '\n';
-        return {};
+        gl::GLuint vbo = 0, vao = 0, ebo = 0;
+        gl::GLsizei indexCount = 0;
+    };
+
+    struct Uniforms
+    {
+        gl::GLint model;
+        gl::GLint view;
+        gl::GLint projection;
+        gl::GLint color;
+        gl::GLint shadowPass;
+        gl::GLint useTexture;
+        gl::GLint showNormals;
+        gl::GLint lightDirection;
+        gl::GLint albedo;
+    };
+
+    // represents one model name registered in the scene
+    // 2 versions + 1 texture
+    struct ModelAsset
+    {
+        Mesh custom;
+        Mesh external;
+        gl::GLuint texture = 0;
+        std::string path;
+        std::string error;
+        // for imgui
+        std::size_t customTriangles = 0;
+        std::size_t externalTriangles = 0;
+        bool customValid = false;
+        bool externalValid = false;
+    };
+
+    // Read GLSL shader from disk
+    std::string readFile(const std::string& path)
+    {
+        std::ifstream file(path);
+
+        if (!file)
+        {
+            std::cerr << "Cannot open: " << path << '\n';
+            return {};
+        }
+
+        std::ostringstream stream;
+        stream << file.rdbuf();
+        return stream.str();
     }
 
-    std::ostringstream stream;
-    stream << file.rdbuf();
-    return stream.str();
-}
-
-// Compile one shader + report errors
-gl::GLuint compileShader(gl::GLenum type, const std::string& source)
-{
-    gl::GLuint shader = gl::glCreateShader(type);
-
-    const char* text = source.c_str();
-    gl::glShaderSource(shader, 1, &text, nullptr);
-    gl::glCompileShader(shader);
-
-    gl::GLint success = 0;
-    gl::glGetShaderiv(shader, gl::GL_COMPILE_STATUS, &success);
-
-    if (!success)
+    // Compile one shader + report errors
+    gl::GLuint compileShader(gl::GLenum type, const std::string& source)
     {
-        char log[2048] = {};
-        gl::glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        std::cerr << "Shader error:\n" << log << '\n';
-        gl::glDeleteShader(shader);
-        return 0;
+        gl::GLuint shader = gl::glCreateShader(type);
+
+        const char* text = source.c_str();
+        gl::glShaderSource(shader, 1, &text, nullptr);
+        gl::glCompileShader(shader);
+
+        gl::GLint success = 0;
+        gl::glGetShaderiv(shader, gl::GL_COMPILE_STATUS, &success);
+
+        if (!success)
+        {
+            char log[4096] = {};
+            gl::glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+            std::cerr << "Shader compilation failed:\n" << log << '\n';
+            gl::glDeleteShader(shader);
+            return 0;
+        }
+
+        return shader;
     }
 
-    return shader;
-}
-
-// Create a GPU program from vertex and fragment shaders
-gl::GLuint createProgram(const std::string& vertexSource, const std::string& fragmentSource)
-{
-    gl::GLuint vs = compileShader(gl::GL_VERTEX_SHADER, vertexSource);
-    if (!vs) return 0;
-
-    gl::GLuint fs = compileShader(gl::GL_FRAGMENT_SHADER, fragmentSource);
-    if (!fs)
+    // Create a GPU program from vertex and fragment shaders
+    gl::GLuint createProgram(const std::string& vertexSource, const std::string& fragmentSource)
     {
+        gl::GLuint vs = compileShader(gl::GL_VERTEX_SHADER, vertexSource);
+        if (!vs) return 0;
+
+        gl::GLuint fs = compileShader(gl::GL_FRAGMENT_SHADER, fragmentSource);
+        if (!fs)
+        {
+            gl::glDeleteShader(vs);
+            return 0;
+        }
+
+        gl::GLuint program = gl::glCreateProgram();
+        gl::glAttachShader(program, vs);
+        gl::glAttachShader(program, fs);
+        gl::glLinkProgram(program);
+
+        gl::GLint success = 0;
+        gl::glGetProgramiv(program, gl::GL_LINK_STATUS, &success);
+
+        if (!success)
+        {
+            char log[4096] = {};
+            gl::glGetProgramInfoLog(program, sizeof(log), nullptr, log);
+            std::cerr << "Shader link failed:\n" << log << '\n';
+            gl::glDeleteProgram(program);
+            program = 0;
+        }
+
         gl::glDeleteShader(vs);
-        return 0;
+        gl::glDeleteShader(fs);
+
+        return program;
     }
 
-    gl::GLuint program = gl::glCreateProgram();
-    gl::glAttachShader(program, vs);
-    gl::glAttachShader(program, fs);
-    gl::glLinkProgram(program);
-
-    gl::GLint success = 0;
-    gl::glGetProgramiv(program, gl::GL_LINK_STATUS, &success);
-
-    if (!success)
+    Mesh uploadMesh(const MeshData& meshData)
     {
-        char log[2048] = {};
-        gl::glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-        std::cerr << "Program error:\n" << log << '\n';
-    }
+        Mesh mesh;
 
-    gl::glDeleteShader(vs);
-    gl::glDeleteShader(fs);
-
-    if (!success)
-    {
-        gl::glDeleteProgram(program);
-        return 0;
-    }
-
-    return program;
-}
-
-// helper
-// converts vec3s to vertex + append
-void addVertex(MeshData& meshData, glm::vec3 p, glm::vec3 n)
-{
-    meshData.vertices.push_back({p.x, p.y, p.z, n.x, n.y, n.z});
-}
-
-// b - a is the edge from a to b.
-// c - a is the edge from a to c.
-// Their cross product points out of the face.
-// Normalize makes it length 1.
-// Every vertex gets same normal because its same face bruh
-// Why duplicate vertices? Because im stupid, thats why. Cube corner has 3 different face directions, so 3 normals. 1 Vertex = 1 normal. So duplicate that shit.
-void addQuad(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d)
-{
-    const glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
-    const std::uint32_t start = static_cast<std::uint32_t>(meshData.vertices.size());
-    addVertex(meshData, a, n);
-    addVertex(meshData, b, n);
-    addVertex(meshData, c, n);
-    addVertex(meshData, d, n);
-    meshData.indices.insert(meshData.indices.end(),
-    {
-        start, start + 1, start + 2,
-        start, start + 2, start + 3
-    });
-}
-
-// should be almost same as addQuad but -1 arg
-void addTriangle(MeshData& meshData, glm::vec3 a, glm::vec3 b, glm::vec3 c)
-{
-    const glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
-    const std::uint32_t start = static_cast<std::uint32_t>(meshData.vertices.size());
-    addVertex(meshData, a, n);
-    addVertex(meshData, b, n);
-    addVertex(meshData, c, n);
-    meshData.indices.insert(meshData.indices.end(),
-    {
-        start, start + 1, start + 2
-    });
-}
-
-// s is half size
-// centered on the origin
-MeshData makeCube()
-{
-    MeshData md;
-    const float s = 0.65f;
-    // Ty Martin for leaking the cube :)
-    addQuad(md, {-s,-s, s}, { s,-s, s}, { s, s, s}, {-s, s, s}); // front
-    addQuad(md, { s,-s,-s}, {-s,-s,-s}, {-s, s,-s}, { s, s,-s}); // back
-    addQuad(md, { s,-s, s}, { s,-s,-s}, { s, s,-s}, { s, s, s}); // right
-    addQuad(md, {-s,-s,-s}, {-s,-s, s}, {-s, s, s}, {-s, s,-s}); // left
-    addQuad(md, {-s, s, s}, { s, s, s}, { s, s,-s}, {-s, s,-s}); // top
-    addQuad(md, {-s,-s,-s}, { s,-s,-s}, { s,-s, s}, {-s,-s, s}); // bottom
-
-    return md;
-}
-
-MeshData makePyramid()
-{
-    MeshData md;
-    const float s = 0.65f;
-    const glm::vec3 tip{0.0f, 0.85f, 0.0f};
-    const glm::vec3 a{-s, -s, s};
-    const glm::vec3 b{s, -s, s};
-    const glm::vec3 c{s, -s, -s};
-    const glm::vec3 d{-s, -s, -s};
-    addTriangle(md, a, b, tip);
-    addTriangle(md, b, c, tip);
-    addTriangle(md, c, d, tip);
-    addTriangle(md, d, a, tip);
-    addQuad(md, d, c, b, a); // bottom face reversed so that normal points down instead of up
-
-    return md;
-}
-
-// OOOOOO CHECK THIS OUT: https://www.songho.ca/opengl/gl_sphere.html
-// theta is angle down from north pole, 0 to pi
-// phi is angle around vertical axis, 0 to 2pi
-// cos(theta) is height(y), sin(theta) is how far from vertical axis we are (ring radius), cos(phi) & sin(phi) spread around the ring. Result should always have length 1.
-// Vertices are stored by stacks, each stack having slices + 1 vertices. So vertex (stack y, slice x) has index y * (slices + 1) + x
-//
-MeshData makeSphere(int stacks = 24, int slices = 32)
-{
-    MeshData md;
-    constexpr float pi = 3.14159265358979323846f;
-    const float radius = 0.7f;
-
-    // because loops use <= stacks/slices, there should be (stacks+1) * (slices+1) vertices
-
-    for (int y = 0; y <= stacks; ++y)
-    {
-        // y / stacks = fraction from 0 to 1, to sweep evenly
-        const float theta = pi * float(y) / float(stacks);
-        for (int x = 0; x <= slices; ++x)
+        if (meshData.vertices.empty() || meshData.indices.empty())
         {
-            const float phi = 2.0f * pi * float(x) / float(slices);
-            // cos(theta) is y aka height. 0 to 1
-            // sin(theta) is how wide the stack is at that height. 0 to 1
-            // Where on the stack - if stack is just a circle and circle is (cos(phi), sin(phi)), then multiply by the stack size
-            // x = sin(theta)*cos(phi)
-            // z = sin(theta)*sin(phi)
-            const glm::vec3 normal
-            {
-                std::sin(theta) * std::cos(phi),
-                std::cos(theta),
-                std::sin(theta) * std::sin(phi)
-            };
-            // On a sphere the direction from the center to a surface point is the outward normal
-            // Position is that normal stretched to radius
-            addVertex(md, radius * normal, normal);
+            return mesh;
         }
+
+        // get handles, bind (make active) vao
+        mesh.indexCount = static_cast<gl::GLsizei>(meshData.indices.size());
+        gl::glGenVertexArrays(1, &mesh.vao);
+        gl::glGenBuffers(1, &mesh.vbo);
+        gl::glGenBuffers(1, &mesh.ebo);
+        gl::glBindVertexArray(mesh.vao);
+
+        // bind vbo, copy vertex bytes to gpu
+        gl::glBindBuffer(gl::GL_ARRAY_BUFFER, mesh.vbo);
+        gl::glBufferData(gl::GL_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.vertices.size() * sizeof(Vertex)), meshData.vertices.data(), gl::GL_STATIC_DRAW);
+
+        // same but ebo
+        // apparently ebo binding gets remembered by vao, cool
+        gl::glBindBuffer(gl::GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+        gl::glBufferData(gl::GL_ELEMENT_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.indices.size() * sizeof(std::uint32_t)), meshData.indices.data(), gl::GL_STATIC_DRAW);
+
+        // attribute number (0/1 bc layout lcoation), how many components (3), type, normalize ints, stride (24 bytes from one vertex to next), offset
+        gl::glVertexAttribPointer(0, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, px)));
+        gl::glEnableVertexAttribArray(0);
+        gl::glVertexAttribPointer(1, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, nx)));
+        gl::glEnableVertexAttribArray(1);
+        gl::glVertexAttribPointer(2, 2, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, u)));
+        gl::glEnableVertexAttribArray(2);
+        // unbind so nothing changes it, just in case, you know
+        gl::glBindVertexArray(0);
+
+        return mesh;
     }
 
-    // if a is current vertex
-    // b is a + (slices + 1) aka vertex directly below the current one
-    // a (top left), a+1 (top right), b (bottom left), b+1 (bottom right)
-    // index = y * (slices + 1) + x
-    for (int y = 0; y < stacks; ++y)
+    // helper, nuffsaid
+    void destroyMesh(Mesh& m)
     {
-        for (int x = 0; x < slices; ++x)
+        if (m.ebo)
         {
-            const std::uint32_t a = std::uint32_t(y * (slices + 1) + x);
-            const std::uint32_t b = a + std::uint32_t(slices + 1);
-            md.indices.insert(md.indices.end(),
-            {
-                a, a + 1, b,
-                a + 1, b + 1, b
-            });
+            gl::glDeleteBuffers(1, &m.ebo);
         }
+
+        if (m.vbo)
+        {
+            gl::glDeleteBuffers(1, &m.vbo);
+        }
+
+        if (m.vao)
+        {
+            gl::glDeleteVertexArrays(1, &m.vao);
+        }
+
+        m = {};
     }
 
-    return md;
-}
-
-// Do I REALLY have to explain this???
-MeshData makeFloor()
-{
-    MeshData md;
-    const float y = -0.8f;
-    addQuad(md, {-5.3f,y, 4.0f}, { 5.3f,y, 4.0f}, { 5.3f,y,-4.0f}, {-5.3f,y,-4.0f});
-    return md;
-}
-
-Mesh uploadMesh(const MeshData& meshData)
-{
-    Mesh mesh;
-
-    // get handles, bind (make active) vao
-    mesh.indexCount = static_cast<gl::GLsizei>(meshData.indices.size());
-    gl::glGenVertexArrays(1, &mesh.vao);
-    gl::glGenBuffers(1, &mesh.vbo);
-    gl::glGenBuffers(1, &mesh.ebo);
-    gl::glBindVertexArray(mesh.vao);
-
-    // bind vbo, copy vertex bytes to gpu
-    gl::glBindBuffer(gl::GL_ARRAY_BUFFER, mesh.vbo);
-    gl::glBufferData(gl::GL_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.vertices.size() * sizeof(Vertex)), meshData.vertices.data(), gl::GL_STATIC_DRAW);
-
-    // same but ebo
-    // apparently ebo binding gets remembered by vao, cool
-    gl::glBindBuffer(gl::GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
-    gl::glBufferData(gl::GL_ELEMENT_ARRAY_BUFFER, static_cast<gl::GLsizeiptr>(meshData.indices.size() * sizeof(std::uint32_t)), meshData.indices.data(), gl::GL_STATIC_DRAW);
-
-    // attribute number (0/1 bc layout lcoation), how many components (3), type, normalize ints, stride (24 bytes from one vertex to next), offset
-    gl::glVertexAttribPointer(0, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), nullptr);
-    gl::glEnableVertexAttribArray(0);
-    gl::glVertexAttribPointer(1, 3, gl::GL_FLOAT, gl::GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(3 * sizeof(float)));
-    gl::glEnableVertexAttribArray(1);
-    // unbind so nothing changes it, just in case, you know
-    gl::glBindVertexArray(0);
-
-    return mesh;
-}
-
-// helper, nuffsaid
-void destroyMesh(const Mesh& m)
-{
-    gl::glDeleteBuffers(1, &m.ebo);
-    gl::glDeleteBuffers(1, &m.vbo);
-    gl::glDeleteVertexArrays(1, &m.vao);
-}
-
-void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model, const glm::vec3& color)
-{
-    // glDrawElements: draw triangles, using indexCount indices of type uint, starting at offset 0 of the bound EBO.
-    // args - location (u.model), count (1 matrix), transpose (no), float pointer value
-    // no need to transpose because glm & opengl are both column major matrices
-    gl::glUniformMatrix4fv(u.model, 1, gl::GL_FALSE, glm::value_ptr(model));
-    gl::glUniform3f(u.color, color.r, color.g, color.b);
-    gl::glBindVertexArray(mesh.vao);
-    // draw mode, count, type, offset
-    gl::glDrawElements(gl::GL_TRIANGLES, mesh.indexCount, gl::GL_UNSIGNED_INT, nullptr);
-}
-
-// reserved for future :)
-std::string randomString(size_t length)
-{
-    static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(32, 126);
-
-    std::string result;
-    result.reserve(length);
-
-    for (size_t i = 0; i < length; i++)
+    // Fallback texture is visible if a PNG cannot be found;
+    // returns gpu texture id for 2x2 debug img
+    gl::GLuint createFallbackTexture()
     {
-        result += static_cast<char>(dist(rng));
+        // 2x2 pixels * 4 channels (rgba)
+        constexpr std::array<unsigned char, 16> rgba = {
+            255, 0, 255, 255,   32, 32, 32, 255,
+            32, 32, 32, 255,   255, 0, 255, 255
+        };
+
+        gl::GLuint texture = 0;
+        gl::glGenTextures(1, &texture);
+        gl::glBindTexture(gl::GL_TEXTURE_2D, texture);
+        // gl_texture_2d is 2d target, mip lvl 0, gpu format gl_rgba8
+        // width 2, height 2, border 0, incoming pixel layout gl_rgba, data type uint
+        gl::glTexImage2D(gl::GL_TEXTURE_2D, 0, gl::GL_RGBA8, 2, 2, 0, gl::GL_RGBA, gl::GL_UNSIGNED_BYTE, rgba.data());
+        // minification filter to gl_nearest, zooming out samples closest existing pixel, gives sharp checker pixels
+        gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MIN_FILTER, gl::GL_NEAREST);
+        // magnification to same, zooming in also stays blocky
+        gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MAG_FILTER, gl::GL_NEAREST);
+        return texture;
     }
 
-    return result;
-}
+    // use stb_image to read img from disk, create opengl texture, return id
+    gl::GLuint loadTexture(const std::string& path)
+    {
+        // obj vt (0,0) is bottom-left
+        // img usually starts top-left
+        stbi_set_flip_vertically_on_load(true);
+        int width = 0, height = 0, channels = 0;
+        // load, fill dimensions, use 4 channes
+        unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
 
-// reserved for future :)
-Color randomColor()
-{
-    static std::mt19937 rng(std::random_device{}());
-    static std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        // check img
+        if (!pixels || width <= 0 || height <= 0)
+        {
+            std::cerr << "Texture error: " << path << ": " << stbi_failure_reason() << '\n';
+            stbi_image_free(pixels);
+            return createFallbackTexture();
+        }
 
-    return {dist(rng), dist(rng), dist(rng)};
+        gl::GLuint texture = 0;
+        gl::glGenTextures(1, &texture);
+        gl::glBindTexture(gl::GL_TEXTURE_2D, texture);
+        gl::glTexImage2D(gl::GL_TEXTURE_2D, 0, gl::GL_RGBA8, width, height, 0, gl::GL_RGBA, gl::GL_UNSIGNED_BYTE, pixels);
+        // distant objs avoid excessive aliasing
+        gl::glGenerateMipmap(gl::GL_TEXTURE_2D);
+        // interpolates between nearby texels and between mip levels (trilinear filtering).
+        gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MIN_FILTER, gl::GL_LINEAR_MIPMAP_LINEAR);
+        // Magnification filter `GL_LINEAR` blends nearby texels when enlarging the texture
+        gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MAG_FILTER, gl::GL_LINEAR);
+        // horizontal aka U, wraps outside 0 - 1
+        gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_WRAP_S, gl::GL_REPEAT);
+        // same as above but V vertical
+        gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_WRAP_T, gl::GL_REPEAT);
+        // opengl has its own copy atp, so free the img
+        stbi_image_free(pixels);
+
+        return texture;
+    }
+
+    void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model,
+                  const glm::vec3& tint, gl::GLuint texture, bool shadow,
+                  bool useTexture, bool showNormals)
+    {
+        // glDrawElements: draw triangles, using indexCount indices of type uint, starting at offset 0 of the bound EBO.
+        // args - location (u.model), count (1 matrix), transpose (no), float pointer value
+        // no need to transpose because glm & opengl are both column major matrices
+        if (!mesh.vao)
+        {
+            return;
+        }
+
+        gl::glUniformMatrix4fv(u.model, 1, gl::GL_FALSE, glm::value_ptr(model));
+        gl::glUniform3f(u.color, tint.r, tint.g, tint.b);
+        gl::glUniform1i(u.shadowPass, shadow ? 1 : 0);
+        gl::glUniform1i(u.useTexture, useTexture ? 1 : 0);
+        gl::glUniform1i(u.showNormals, showNormals ? 1 : 0);
+        // select texture unit 0
+        gl::glActiveTexture(gl::GL_TEXTURE0);
+        // bind this model's texture id on unit 0, so uAlbedo=0 can sample it
+        gl::glBindTexture(gl::GL_TEXTURE_2D, texture);
+        gl::glBindVertexArray(mesh.vao);
+        // draw mode, count, type, offset
+        gl::glDrawElements(gl::GL_TRIANGLES, mesh.indexCount, gl::GL_UNSIGNED_INT, nullptr);
+    }
+
+    // All meshes and png textures get uploaded once on registration
+    // this class owns all named models & obj text strings
+    class AssetCache
+    {
+    public:
+        // register one model, name is lookup key
+        bool add(const std::string& name, const std::string& objPath, const std::string& texturePath)
+        {
+            // if assets_ already contains this name, do nothing, return success
+            if (assets_.count(name))
+            {
+                return true;
+            }
+
+            // find or create entry in objText_
+            auto [it, inserted] = objText_.try_emplace(objPath);
+
+            if (inserted)
+            {
+                it->second = readFile(objPath);
+                ++diskReads_; // counted per unique obj path
+            }
+
+            if (it->second.empty())
+            {
+                std::cerr << "Could not open or read OBJ: " << objPath << '\n';
+                return false;
+            }
+
+            // Both loaders parse the same std::string, so no file reopening
+            // these get separate MeshData
+            const ObjLoadResult own = loadCustomObj(it->second);
+            const ObjLoadResult external = loadTinyObj(it->second);
+            ModelAsset asset;
+            asset.path = objPath;
+
+            if (own.ok())
+            {
+                asset.custom = uploadMesh(own.mesh);
+                asset.customValid = asset.custom.vao != 0;
+                // 3 indices per triangle so divide by 3 to get index count
+                asset.customTriangles = own.mesh.indices.size() / 3;
+                ++gpuUploads_;
+            }
+            else
+            {
+                asset.error += "Custom: " + own.error + "; ";
+            }
+
+            if (external.ok())
+            {
+                asset.external = uploadMesh(external.mesh);
+                asset.externalValid = asset.external.vao != 0;
+                asset.externalTriangles = external.mesh.indices.size() / 3;
+                ++gpuUploads_;
+            }
+            else
+            {
+                asset.error += "TinyObj: " + external.error + "; ";
+            }
+
+            for (const auto& warning : own.warnings)
+            {
+                std::cerr << "[Custom " << name << "] " << warning << '\n';
+            }
+
+            for (const auto& warning : external.warnings)
+            {
+                std::cerr << "[TinyObj " << name << "] " << warning << '\n';
+            }
+
+            if (!asset.customValid && !asset.externalValid)
+            {
+                std::cerr << "OBJ failed: " << name << ": " << asset.error << '\n';
+                return false;
+            }
+
+            asset.texture = loadTexture(texturePath);
+            // insert model asset into the assets_ map under name
+            assets_.emplace(name, asset);
+            return true;
+        }
+
+        // Required: name + position + optional transform/tint.
+        // This only updates uniforms/bindings and issues a draw call.
+        // name is lookup key, selects model
+        //
+        void renderObj(const std::string& name, const glm::vec3& pos,
+                       const Uniforms& u, bool customLoader, bool shadow,
+                       bool textured, bool debugNormals,
+                       float yRotation = 0.0f,
+                       const glm::vec3& scale = glm::vec3(1.0f),
+                       const glm::vec3& tint = glm::vec3(1.0f)) const
+        {
+            const auto it = assets_.find(name);
+
+            if (it == assets_.end())
+            {
+                return;
+            }
+
+            const ModelAsset& asset = it->second;
+            const Mesh* mesh = customLoader ? &asset.custom : &asset.external;
+            // fallback to other version
+            if (!mesh->vao)
+            {
+                mesh = customLoader ? &asset.external : &asset.custom;
+            }
+            // just in case if neither mesh has vao
+            if (!mesh->vao)
+            {
+                return;
+            }
+
+            const glm::mat4 model = glm::scale(
+                                    glm::rotate(glm::translate(glm::mat4(1.0f), pos),
+                                                yRotation, glm::vec3(0, 1, 0)), scale);
+
+            drawMesh(*mesh, u, model, tint, asset.texture, shadow, textured, debugNormals);
+        }
+
+        // number of first-seen OBJ file paths read
+        int diskReads() const
+        {
+            return diskReads_;
+        }
+
+        // number of OBJ GPU mesh upload attempts counted at registration
+        int gpuUploads() const
+        {
+            return gpuUploads_;
+        }
+
+        // number of registered names (not scene copies and not unique file paths)
+        std::size_t uniqueModels() const
+        {
+            return assets_.size();
+        }
+
+        // imgui stuff
+        const std::map<std::string, ModelAsset>& items() const
+        {
+            return assets_;
+        }
+
+        // release all cache-owned gpu resources while a valid OpenGL context still exists
+        void clear()
+        {
+            for (auto& pair : assets_)
+            {
+                destroyMesh(pair.second.custom);
+                destroyMesh(pair.second.external);
+
+                if (pair.second.texture)
+                {
+                    gl::glDeleteTextures(1, &pair.second.texture);
+                }
+            }
+
+            assets_.clear();
+            objText_.clear();
+        }
+
+    private:
+        // sorted mapping from model name to modelasset
+        std::map<std::string, ModelAsset> assets_;
+        // hash mapping from obj path to its text
+        std::unordered_map<std::string, std::string> objText_;
+        // attempts to read first-seen OBJ paths
+        int diskReads_ = 0;
+        // successful-parser GPU mesh upload attempts
+        int gpuUploads_ = 0;
+    };
+
+    // uses UV now
+    MeshData makeFloor()
+    {
+        MeshData md;
+        const float x = 8.5f, z = 5.6f;
+        // uv - 00, 80, 85, 05
+        // 80, 85, 05 to repeat texture at x and/or z
+        md.vertices = {
+            {-x, kFloorY,  z, 0,1,0, 0,0},
+            { x, kFloorY,  z, 0,1,0, 8,0},
+            { x, kFloorY, -z, 0,1,0, 8,5},
+            {-x, kFloorY, -z, 0,1,0, 0,5}
+        };
+        md.indices = {0, 1, 2, 0, 2, 3};
+        return md;
+    }
+
+    // reworked SceneObject kinda
+    // placement of a model in a scene
+    struct Instance
+    {
+        const char* name;
+        glm::vec3 position;
+        glm::vec3 scale;
+        float rotationSpeed;
+    };
+
+    void glfwErrorCallback(int code, const char* message)
+    {
+        std::cerr << "GLFW " << code << ": " << message << '\n';
+    }
 }
 
 int main()
