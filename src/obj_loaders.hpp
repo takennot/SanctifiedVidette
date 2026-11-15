@@ -20,4 +20,4 @@ struct ObjLoadResult
 // Both functions accept OBJ contents.
 // The caller controls i/o and can pass the same bytes to either loader without reopening the file.
 ObjLoadResult loadCustomObj(const std::string& contents);
-ObjLoadResult loadTinyObj(const std::string& contents);
+ObjLoadResult loadTinyObj(const std::string& contents, const std::string& mtlContents = "");

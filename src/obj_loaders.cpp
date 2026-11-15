@@ -456,7 +456,7 @@ ObjLoadResult loadCustomObj(const std::string& contents)
     return out;
 }
 
-ObjLoadResult loadTinyObj(const std::string& contents)
+ObjLoadResult loadTinyObj(const std::string& contents, const std::string& mtlContents)
 {
     ObjLoadResult out;
     // apparently the way I used tinyobj before was deprecated api
@@ -468,7 +468,7 @@ ObjLoadResult loadTinyObj(const std::string& contents)
     config.vertex_color = false;
 
     // add mtl support later
-    if (!reader.ParseFromString(contents, "", config))
+    if (!reader.ParseFromString(contents, mtlContents, config))
     {
         // prefix with TinyObjLoader to see which obj loader failed
         out.error = "TinyObjLoader: " + reader.Error();

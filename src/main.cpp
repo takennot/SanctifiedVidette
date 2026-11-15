@@ -296,7 +296,7 @@ namespace
     {
     public:
         // register one model, name is lookup key
-        bool add(const std::string& name, const std::string& objPath, const std::string& texturePath)
+        bool add(const std::string& name, const std::string& objPath, const std::string& texturePath, const std::string& mtlPath = "")
         {
             // if assets_ already contains this name, do nothing, return success
             if (assets_.count(name))
@@ -326,7 +326,15 @@ namespace
             // Both loaders parse the same std::string, so no file reopening
             // these get separate MeshData
             const ObjLoadResult own = loadCustomObj(it->second);
-            const ObjLoadResult external = loadTinyObj(it->second);
+
+            std::string mtl;
+
+            if (!mtlPath.empty())
+            {
+                mtl = readFile(mtlPath);
+            }
+
+            const ObjLoadResult external = loadTinyObj(it->second, mtl);
             ModelAsset asset;
             asset.path = objPath;
 
@@ -572,7 +580,7 @@ int main()
         cache.add("bunny", "assets/models/bunny.obj", "assets/textures/beastfur.png") &&
         cache.add("teapot", "assets/models/teapot.obj", "assets/textures/lizard_skin.png") &&
         cache.add("cat", "assets/models/cat.obj", "assets/textures/cat.png") &&
-        cache.add("fishClown", "assets/models/fishClown.obj", "assets/textures/clownfish.png") &&
+        cache.add("fishClown", "assets/models/fishClown.obj", "assets/textures/clownfish.png", "assets/models/fishclown.mtl") &&
         cache.add("monkey", "assets/models/monkey.obj", "assets/textures/cat.png");
 
     if (!loaded)
