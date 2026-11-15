@@ -214,9 +214,11 @@ namespace
         gl::GLuint texture = 0;
         gl::glGenTextures(1, &texture);
         gl::glBindTexture(gl::GL_TEXTURE_2D, texture);
-        // gl_texture_2d is 2d target, mip lvl 0, gpu format gl_rgba8
+        // upload texture to gpu
+        // gl_texture_2d is 2d target, mip lvl 0 (full size img), gpu format gl_rgba8
         // width 2, height 2, border 0, incoming pixel layout gl_rgba, data type uint
         gl::glTexImage2D(gl::GL_TEXTURE_2D, 0, gl::GL_RGBA8, 2, 2, 0, gl::GL_RGBA, gl::GL_UNSIGNED_BYTE, rgba.data());
+        // https://learnopengl.com/Getting-started/Textures (texture filtering)
         // minification filter to gl_nearest, zooming out samples closest existing pixel, gives sharp checker pixels
         gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MIN_FILTER, gl::GL_NEAREST);
         // magnification to same, zooming in also stays blocky
@@ -250,7 +252,7 @@ namespace
         gl::glGenerateMipmap(gl::GL_TEXTURE_2D);
         // interpolates between nearby texels and between mip levels (trilinear filtering).
         gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MIN_FILTER, gl::GL_LINEAR_MIPMAP_LINEAR);
-        // Magnification filter `GL_LINEAR` blends nearby texels when enlarging the texture
+        // Magnification filter 'GL_LINEAR' blends nearby texels when enlarging the texture
         gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MAG_FILTER, gl::GL_LINEAR);
         // horizontal aka U, wraps outside 0 - 1
         gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_WRAP_S, gl::GL_REPEAT);
@@ -303,14 +305,18 @@ namespace
             }
 
             // find or create entry in objText_
+            // it - entry (first - path, second - content)
+            // inserted - if new entry was created
             auto [it, inserted] = objText_.try_emplace(objPath);
 
+            // if new - read file
             if (inserted)
             {
+                // second - obj file content
                 it->second = readFile(objPath);
                 ++diskReads_; // counted per unique obj path
             }
-
+            // just in case
             if (it->second.empty())
             {
                 std::cerr << "Could not open or read OBJ: " << objPath << '\n';
@@ -382,6 +388,8 @@ namespace
                        const glm::vec3& scale = glm::vec3(1.0f),
                        const glm::vec3& tint = glm::vec3(1.0f)) const
         {
+            // it first - model name
+            // it second - model asset
             const auto it = assets_.find(name);
 
             if (it == assets_.end())
@@ -454,7 +462,7 @@ namespace
     private:
         // sorted mapping from model name to modelasset
         std::map<std::string, ModelAsset> assets_;
-        // hash mapping from obj path to its text
+        // hash mapping from obj path to its text / content
         std::unordered_map<std::string, std::string> objText_;
         // attempts to read first-seen OBJ paths
         int diskReads_ = 0;

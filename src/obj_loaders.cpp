@@ -18,21 +18,23 @@
 
 namespace
 {
-    // btw named this obj vertex a Corner to not confuse with my Vertex struct
-    struct Corner
+    // stores indices
+    struct ObjVertex
     {
         int p = -1, uv = -1, n = -1;
-        bool operator==(const Corner& other) const
+        // for comparing if 2 objvertex are same
+        bool operator==(const ObjVertex& other) const
         {
             return p == other.p && uv == other.uv && n == other.n;
         }
     };
 
-    // hash the obj corner, for checking if corner already exists
-    struct CornerHash
+    // hash the objvertex, for checking if objvertex already exists
+    struct ObjVertexHash
     {
-        std::size_t operator()(const Corner& c) const
+        std::size_t operator()(const ObjVertex& c) const
         {
+            // create hash from position index
             std::size_t h = std::hash<int>{}(c.p);
             // combine hash using XOR
             // 0x9e3779b9u helps with even distribution (reducing collisions)
@@ -43,6 +45,7 @@ namespace
         }
     };
 
+    // string to float
     bool parseFloat(const std::string& text, float& value)
     {
         if (text.empty())
@@ -63,6 +66,7 @@ namespace
                std::isfinite(value);
     }
 
+    // check if input is ok
     // example stream input = "1.5 2.0 3.7"
     bool readFloats(std::istringstream& stream, float* values, int count)
     {
@@ -120,12 +124,12 @@ namespace
         return true;
     }
 
-    // token - corner from obj
+    // token - vertex from obj for example 17/8/9 in obj face
     // pcount, uvcount, ncount - number of positions/uv coords/normals loaded so far
-    // result - corner struct
-    bool parseCorner(const std::string& token, std::size_t pCount, std::size_t uvCount, std::size_t nCount, Corner& result)
+    // result - objvertex struct
+    bool parseObjVertex(const std::string& token, std::size_t pCount, std::size_t uvCount, std::size_t nCount, ObjVertex& result)
     {
-        // example: if corner is 17/8/9
+        // example: if obj vertex is 17/8/9
         // below searches for the first slash (which will be at pos 2 because 1(0) 7(1) /(2))
         const std::size_t first = token.find('/');
         // npos is no position / impossible index int
@@ -207,7 +211,7 @@ namespace
         return glm::normalize(cross);
     }
 
-    // Deduplicate corners in case if obj face refers to already existing gpu vertex
+    // Deduplicate obj vertices (the indices one, not the actual vertices with values) in case if obj face refers to already existing gpu vertex
     // BUT when obj normal is missing, we do NOT share vertex between differently oriented faces
     // to keep flat shading correct
     //
@@ -215,19 +219,19 @@ namespace
     // then return its index in mesh.vertices
     //
     // args: vec3 positions, texcoords, normals - obj pos, uv, normals
-    // fallbackNormal - calculated from current face, used only if corner has no vn
+    // fallbackNormal - calculated from current face, used only if obj vertex has no vn
     // unordered_map - hash map from triple (p, uv, n) to existing gpu vertex index
-    std::uint32_t appendCorner(MeshData& mesh, const Corner& c,
+    std::uint32_t appendObjVertex(MeshData& mesh, const ObjVertex& ov,
                                const std::vector<glm::vec3>& positions,
                                const std::vector<glm::vec2>& texcoords,
                                const std::vector<glm::vec3>& normals,
                                glm::vec3 fallbackNormal,
-                               std::unordered_map<Corner, std::uint32_t, CornerHash>& cache)
+                               std::unordered_map<ObjVertex, std::uint32_t, ObjVertexHash>& cache)
     {
         // if obj normal exists, reuse cached vertices
-        if (c.n >= 0)
+        if (ov.n >= 0)
         {
-            const auto found = cache.find(c);
+            const auto found = cache.find(ov);
             if (found != cache.end())
             {
                 // return old index if found
@@ -235,51 +239,53 @@ namespace
             }
         }
 
-        const glm::vec3 p = positions[static_cast<std::size_t>(c.p)];
+        const glm::vec3 p = positions[static_cast<std::size_t>(ov.p)];
         // if no UV index, use (0.0)
-        const glm::vec2 uv = c.uv < 0 ? glm::vec2(0.0f) : texcoords[static_cast<std::size_t>(c.uv)];
+        const glm::vec2 uv = ov.uv < 0 ? glm::vec2(0.0f) : texcoords[static_cast<std::size_t>(ov.uv)];
         // use fallback if no normal index
-        const glm::vec3 n = c.n < 0 ? fallbackNormal : normals[static_cast<std::size_t>(c.n)];
+        const glm::vec3 n = ov.n < 0 ? fallbackNormal : normals[static_cast<std::size_t>(ov.n)];
 
         // next free index is current number of vertices
+        // as in, if mesh.vertices is 0,1,2 (size 3)
+        // then the next free index is 3 (0,1,2,3)
         const auto newIndex = static_cast<std::uint32_t>(mesh.vertices.size());
 
         // append vertex
         mesh.vertices.push_back({p.x, p.y, p.z, n.x, n.y, n.z, uv.x, uv.y});
 
         // if there are provided normals, save for future reuse
-        if (c.n >= 0)
+        if (ov.n >= 0)
         {
-            cache.emplace(c, newIndex);
+            cache.emplace(ov, newIndex);
         }
         return newIndex;
     }
 
-    // translate list of 3-4 obj corners into triangle indices for GL_TRIANGLES
-    void emitFace(MeshData& mesh, const std::vector<Corner>& face,
+    // translate list of 3-4 obj vertices into triangle indices for GL_TRIANGLES
+    void emitFace(MeshData& mesh, const std::vector<ObjVertex>& face,
                   const std::vector<glm::vec3>& positions,
                   const std::vector<glm::vec2>& uvs,
                   const std::vector<glm::vec3>& normals,
-                  std::unordered_map<Corner, std::uint32_t, CornerHash>& cache)
+                  std::unordered_map<ObjVertex, std::uint32_t, ObjVertexHash>& cache)
     {
         // fallback normal
         const glm::vec3 normal = faceNormal(positions[face[0].p], positions[face[1].p], positions[face[2].p]);
 
         // reserve 4 int slots for gpu indices
-        std::array<std::uint32_t, 4> corners{};
+        std::array<std::uint32_t, 4> vertices{};
 
         for (std::size_t i = 0; i < face.size(); ++i)
         {
-            corners[i] = appendCorner(mesh, face[i], positions, uvs, normals, normal, cache);
+            vertices[i] = appendObjVertex(mesh, face[i], positions, uvs, normals, normal, cache);
         }
 
         // append first triangle
-        mesh.indices.insert(mesh.indices.end(), {corners[0], corners[1], corners[2]});
+        mesh.indices.insert(mesh.indices.end(), {vertices[0], vertices[1], vertices[2]});
 
         if (face.size() == 4)
         {
             // append second triangle
-            mesh.indices.insert(mesh.indices.end(), {corners[0], corners[2], corners[3]});
+            mesh.indices.insert(mesh.indices.end(), {vertices[0], vertices[2], vertices[3]});
         }
     }
 }
@@ -290,9 +296,10 @@ ObjLoadResult loadCustomObj(const std::string& contents)
     std::vector<glm::vec3> positions;
     std::vector<glm::vec2> texcoords;
     std::vector<glm::vec3> normals;
-    std::unordered_map<Corner, std::uint32_t, CornerHash> cache;
+    std::unordered_map<ObjVertex, std::uint32_t, ObjVertexHash> cache;
 
     // wrap string in istringstream so it behaves like a readable file without reopening the obj file
+    // as in, read whole obj line by line
     std::istringstream input(contents);
     std::string line;
     std::size_t lineNumber = 0;
@@ -301,6 +308,7 @@ ObjLoadResult loadCustomObj(const std::string& contents)
     {
         ++lineNumber;
         // wrap this line in a stream so we can extract fields with >>
+        // meanwhile this is read line word by word
         std::istringstream stream(line);
         std::string keyword;
 
@@ -325,10 +333,12 @@ ObjLoadResult loadCustomObj(const std::string& contents)
             else
             {
                 // multiple "o" sections share one mesh
+                // like, if there are 2 objects in obj
+                // we still put all faces for both objects into same MeshData
                 out.objectNames.push_back(name);
             }
         }
-        // vertex aka corner aka xyz
+        // vertex aka xyz
         else if (keyword == "v")
         {
             float a[3];
@@ -386,7 +396,7 @@ ObjLoadResult loadCustomObj(const std::string& contents)
         // face
         else if (keyword == "f")
         {
-            std::vector<Corner> face;
+            std::vector<ObjVertex> face;
             // aka a line, for example 1/2/3 or 1//3
             std::string token;
             bool valid = true;
@@ -399,17 +409,17 @@ ObjLoadResult loadCustomObj(const std::string& contents)
                     break;
                 }
 
-                // invalid if 5th corner appears
+                // invalid if 5th obj vertex appears
                 if (face.size() == 4)
                 {
                     valid = false;
                     break;
                 }
                 // p=uv=n=1
-                Corner c;
+                ObjVertex c;
 
                 // check if index is ok
-                if (!parseCorner(token, positions.size(), texcoords.size(), normals.size(), c))
+                if (!parseObjVertex(token, positions.size(), texcoords.size(), normals.size(), c))
                 {
                     // if invalid, mark whole face as invalid & exit its token loop.
                     valid = false;
@@ -426,7 +436,7 @@ ObjLoadResult loadCustomObj(const std::string& contents)
                 warn(out, lineNumber, "invalid face, missing/out of range index or unsupported ngon");
                 continue;
             }
-            // for a valid face, acll emitface to make gpu vertices & 3/6 triangle indices
+            // for a valid face, call emitface to make gpu vertices & 3/6 triangle indices
             emitFace(out.mesh, face, positions, texcoords, normals, cache);
         }
     }
@@ -505,14 +515,14 @@ ObjLoadResult loadTinyObj(const std::string& contents)
     }
 
     // same as custom obj loader
-    std::unordered_map<Corner, std::uint32_t, CornerHash> cache;
+    std::unordered_map<ObjVertex, std::uint32_t, ObjVertexHash> cache;
 
     // go through shapes here
     for (const auto& shape : shapes)
     {
         // get obj name
         out.objectNames.push_back(shape.name.empty() ? "Unnamed OBJ object" : shape.name);
-        // for where current face corner starts
+        // for where current face obj vertex starts
         std::size_t offset = 0;
 
         // go through num of vertices of each face
@@ -521,7 +531,7 @@ ObjLoadResult loadTinyObj(const std::string& contents)
             // ignore not triangles/quads
             if (count != 3 && count != 4)
             {
-                // move offset by corner count
+                // move offset by obj vertex count
                 offset += count;
                 continue;
             }
@@ -533,20 +543,20 @@ ObjLoadResult loadTinyObj(const std::string& contents)
                 return out;
             }
 
-            // temp list of converted face-corner references
-            std::vector<Corner> face;
+            // temp list of converted face-objvertex references
+            std::vector<ObjVertex> face;
             bool valid = true;
 
-            // loop through this face's corners
+            // loop through this face's (obj) vertices
             for (std::size_t j = 0; j < count; ++j)
             {
-                // index info for one corner of the current face
-                // j - which corner of the face are we looking at
-                // offset + j - corner position in the list
+                // index info for one obj vertex of the current face
+                // j - which (obj)vertex of the face are we looking at
+                // offset + j - obj vertex position in the list
                 // idx should contain pos, uv & normal indices.
                 const auto& idx = shape.mesh.indices[offset + j];
-                // copy already read indices to Corner struct
-                Corner c{idx.vertex_index, idx.texcoord_index, idx.normal_index};
+                // copy already read indices to ObjVertex struct
+                ObjVertex c{idx.vertex_index, idx.texcoord_index, idx.normal_index};
 
                 // check if pos index is at least 0 & less than pos count
                 // and same for uv & normal
@@ -554,11 +564,11 @@ ObjLoadResult loadTinyObj(const std::string& contents)
                     (c.uv >= 0 && static_cast<std::size_t>(c.uv) >= texcoords.size()) ||
                     (c.n >= 0 && static_cast<std::size_t>(c.n) >= normals.size()))
                 {
-                    // if any array entry is out of range - mark as invalid + stop reading its corners
+                    // if any array entry is out of range - mark as invalid + stop reading its vertices (obj)
                     valid = false;
                     break;
                 }
-                // otherwise append corner to this face's list
+                // otherwise append obj vertice to this face's list
                 face.push_back(c);
             }
 
