@@ -42,6 +42,7 @@ void main()
     // mat3 keeps only rotation/scale since normals are directions
     // apparently its right to left soo model --> view --> projetion
     // btw vNormal is interpolated across each triangle & gives that blended value to each pixel in frag shader
+    // maybe move to cpu / main
     vWorldNormal = mat3(transpose(inverse(uModel))) * aNormal;
     vTexCoord = aTexCoord;
     gl_Position = uProjection * uView * worldPosition;
