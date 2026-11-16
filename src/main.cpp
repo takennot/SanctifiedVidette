@@ -525,7 +525,7 @@ int main()
     glfwWindowHint(GLFW_STENCIL_BITS, 8);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Sanctified Vidette", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1920, 1080, "Sanctified Vidette", glfwGetPrimaryMonitor(), nullptr);
 
     if (!window)
     {
@@ -616,6 +616,7 @@ int main()
     bool textured = true;
     bool showNormals = false;
     bool animate = true;
+    bool reverseRotation = false;
     bool perspective = true;
     bool wireframe = false;
     bool shadows = true;
@@ -627,6 +628,7 @@ int main()
     float cameraPos[3] = {7.5f, 7.0f, 12.0f};
     float cameraTarget[3] = {0.f, 0.f, 0.f};
     float cameraFOV = 70.f;
+    float animationSpeedModifier = 1.0f;
 
     // name, pos, scale, rotrate
     const std::array<Instance, 5> instances =
@@ -727,6 +729,8 @@ int main()
         ImGui::Checkbox("Visualize normals", &showNormals);
         ImGui::Checkbox("Projected shadows", &shadows);
         ImGui::Checkbox("Animate objects", &animate);
+        ImGui::Checkbox("Reverse rotation", &reverseRotation);
+        ImGui::SliderFloat("Animation Speed Modifier", &animationSpeedModifier, 0.1f, 100.0f);
         ImGui::Checkbox("Perspective (P)", &perspective);
         // fix imgui wireframe (might be fixed with separate input handling?)
         ImGui::TextUnformatted("Wireframe mode:");
@@ -823,7 +827,7 @@ int main()
 
         drawMesh(floor, u, glm::mat4(1.0f), glm::vec3(1.0f), floorTexture, false, textured, showNormals);
 
-        const float t = animate ? static_cast<float>(glfwGetTime()) : 0.0f;
+        const float t = animate ? static_cast<float>(glfwGetTime()) * animationSpeedModifier : 0.0f;
 
         // lambda to not repeat for loop
         auto drawInstances = [&](bool shadow)
@@ -831,9 +835,18 @@ int main()
             for (const Instance& instance : instances)
             {
                 glm::vec3 pos = instance.position;
-                cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
+
+                reverseRotation ?
+                    cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
+                                textured, showNormals, instance.rotationSpeed * -t,
+                                instance.scale) :
+                    cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
                                 textured, showNormals, instance.rotationSpeed * t,
                                 instance.scale);
+
+                // cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
+                //                 textured, showNormals, instance.rotationSpeed * t,
+                //                 instance.scale);
             }
         };
 
