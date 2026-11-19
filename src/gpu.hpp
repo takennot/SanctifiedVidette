@@ -24,9 +24,9 @@ struct Uniforms
     gl::GLint albedo = -1;
 };
 
-std::string readText(const std::string& path);
+std::string readFile(const std::string& path);
 
-gl::GLuint createShaderProgram(const std::string& vertFile, const std::string& fragFile);
+gl::GLuint createProgram(const std::string& vertFile, const std::string& fragFile);
 
 Uniforms findUniforms(gl::GLuint program);
 
@@ -38,6 +38,6 @@ gl::GLuint loadTexture(const std::string& path);
 
 void destroyTexture(gl::GLuint& texture);
 
-void drawGpuMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model,
+void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model,
                  const glm::vec3& tint, gl::GLuint texture, bool shadow,
-                 bool textured, bool debugNormals);
+                 bool textured, bool showNormals);

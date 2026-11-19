@@ -1,5 +1,5 @@
 set_project("SanctifiedVidette")
-set_version("0.1.0")
+set_version("0.4.0")
 
 set_languages("c++20")
 
@@ -43,4 +43,7 @@ target("SanctifiedVidette")
         local assetsdir = path.join(target:targetdir(), "assets")
         os.mkdir(assetsdir)
         os.cp(path.join(os.projectdir(), "assets", "*"), assetsdir)
+        local scenesdir = path.join(target:targetdir(), "scenes")
+        os.mkdir(scenesdir)
+        os.cp(path.join(os.projectdir(), "scenes", "*"), scenesdir)
     end)

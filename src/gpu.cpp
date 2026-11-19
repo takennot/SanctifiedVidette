@@ -80,7 +80,7 @@ namespace
         gl::glTexParameteri(gl::GL_TEXTURE_2D, gl::GL_TEXTURE_MAG_FILTER, gl::GL_NEAREST);
         return texture;
     }
-
+}
     // Create a GPU program from vertex and fragment shaders
     gl::GLuint createProgram(const std::string& vertexSource, const std::string& fragmentSource)
     {
@@ -241,8 +241,8 @@ namespace
     }
 
     void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model,
-                  const glm::vec3& tint, gl::GLuint texture, bool shadow,
-                  bool useTexture, bool showNormals)
+                     const glm::vec3& tint, gl::GLuint texture, bool shadow,
+                     bool useTexture, bool showNormals)
     {
         // glDrawElements: draw triangles, using indexCount indices of type uint, starting at offset 0 of the bound EBO.
         // args - location (u.model), count (1 matrix), transpose (no), float pointer value
@@ -265,4 +265,3 @@ namespace
         // draw mode, count, type, offset
         gl::glDrawElements(gl::GL_TRIANGLES, mesh.indexCount, gl::GL_UNSIGNED_INT, nullptr);
     }
-}
