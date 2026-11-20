@@ -25,48 +25,48 @@ struct ModelAsset
 // this class owns all named models & obj text strings
 class AssetCache
 {
-public:
-    // register one model, name is lookup key
-    bool add(const std::string& name, const std::string& objPath, const std::string& texturePath, const std::string& mtlPath = "");
+    public:
+        // register one model, name is lookup key
+        bool add(const std::string& name, const std::string& objPath, const std::string& texturePath, const std::string& mtlPath = "");
 
-    const ModelAsset* find(const std::string& name) const;
+        const ModelAsset* find(const std::string& name) const;
 
-    // imgui stuff
-    const std::map<std::string, ModelAsset>& items() const
-    {
-        return assets_;
-    }
+        // imgui stuff
+        const std::map<std::string, ModelAsset>& items() const
+        {
+            return assets_;
+        }
 
-    // number of registered names (not scene copies and not unique file paths)
-    std::size_t uniqueModels() const
-    {
-        return assets_.size();
-    }
+        // number of registered names (not scene copies and not unique file paths)
+        std::size_t uniqueModels() const
+        {
+            return assets_.size();
+        }
 
-    // number of first-seen OBJ file paths read
-    int diskReads() const
-    {
-        return diskReads_;
-    }
+        // number of first-seen OBJ file paths read
+        int diskReads() const
+        {
+            return diskReads_;
+        }
 
-    // number of OBJ GPU mesh upload attempts counted at registration
-    int gpuUploads() const
-    {
-        return gpuUploads_;
-    }
+        // number of OBJ GPU mesh upload attempts counted at registration
+        int gpuUploads() const
+        {
+            return gpuUploads_;
+        }
 
-    // release all cache-owned gpu resources while a valid OpenGL context still exists
-    void clear();
+        // release all cache-owned gpu resources while a valid OpenGL context still exists
+        void clear();
 
-private:
-    // sorted mapping from model name to modelasset
-    std::map<std::string, ModelAsset> assets_;
-    // hash mapping from obj path to its text / content
-    std::unordered_map<std::string, std::string> objText_;
-    // same but from obj path to gpu texture
-    std::unordered_map<std::string, gl::GLuint> textures_;
-    // attempts to read first-seen OBJ paths
-    int diskReads_ = 0;
-    // successful-parser GPU mesh upload attempts
-    int gpuUploads_ = 0;
+    private:
+        // sorted mapping from model name to modelasset
+        std::map<std::string, ModelAsset> assets_;
+        // hash mapping from obj path to its text / content
+        std::unordered_map<std::string, std::string> objText_;
+        // same but from obj path to gpu texture
+        std::unordered_map<std::string, gl::GLuint> textures_;
+        // attempts to read first-seen OBJ paths
+        int diskReads_ = 0;
+        // successful-parser GPU mesh upload attempts
+        int gpuUploads_ = 0;
 };
