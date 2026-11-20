@@ -253,7 +253,8 @@ FrameCommands InputSystem::buildCommands(GLFWwindow* window, float dt, bool mult
             p2.forward = float(state_.held(GLFW_KEY_I)) - float(state_.held(GLFW_KEY_K));
             p2.right = float(state_.held(GLFW_KEY_L)) - float(state_.held(GLFW_KEY_J));
             p2.up = float(state_.held(GLFW_KEY_U)) - float(state_.held(GLFW_KEY_O));
-            // 105.0f is rotation speed
+            // 105.0f is rotation speed.
+            // lookYaw = 1 * 105 * 0.02 = 2.1 degrees for example
             p2.lookYaw = (float(state_.held(GLFW_KEY_RIGHT)) - float(state_.held(GLFW_KEY_LEFT))) * 105.0f * dt;
             p2.lookPitch = (float(state_.held(GLFW_KEY_UP)) - float(state_.held(GLFW_KEY_DOWN))) * 105.0f * dt;
             p2.sprint = state_.held(GLFW_KEY_RIGHT_SHIFT);
@@ -278,7 +279,7 @@ FrameCommands InputSystem::buildCommands(GLFWwindow* window, float dt, bool mult
             p2.forward = clampAxis(p2.forward - deadzone(gamepad.axes[GLFW_GAMEPAD_AXIS_LEFT_Y]));
             p2.right = clampAxis(p2.right + deadzone(gamepad.axes[GLFW_GAMEPAD_AXIS_LEFT_X]));
             // right stick is kinda same, except we add the values instead of replacing
-            // 125.0f is sensitivity
+            // 125.0f is turn rate in degrees per second
             p2.lookYaw += deadzone(gamepad.axes[GLFW_GAMEPAD_AXIS_RIGHT_X]) * 125.0f * dt;
             p2.lookPitch -= deadzone(gamepad.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y]) * 125.0f * dt;
             // press A to go up
