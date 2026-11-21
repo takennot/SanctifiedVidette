@@ -1,0 +1,19 @@
+# Scene 2
+# Swim between oversized fish
+scene Fish Parade
+player1 -9 2.5 10 -60 -5
+player2 9 2.5 10 -120 -5
+goal 0 2.0 -18
+
+# Two moving fish form the main route
+object fishclown -4 0.6 -5 7.0 70 18
+object fishclown 5 0.6 -11 8.0 -70 -14
+object fishclown -2 1.8 -15 4.0 30 25
+
+# Other creatures and props around the route
+object bunny -12 -0.8 -10 1.4 30 0
+object bunny 12 -0.8 -14 1.2 -30 0
+object cat -14 1.2 -4 3.0 60 0
+object monkey 13 0.7 -5 1.1 140 25
+object teapot -10 -0.8 -17 0.025 0 12
+object teapot 10 -0.8 -17 0.025 0 -12
