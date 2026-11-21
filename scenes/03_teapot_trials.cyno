@@ -14,6 +14,6 @@ object teapot 8 -0.8 -12 0.025 -30 -20
 # Models between the slalom markers
 object bunny -2 -0.8 -3 1.2 10 0
 object monkey 3 0.7 -6 1.1 0 45
-object cat -3 1.2 -11 3.0 -20 0
+object cat -3 1.2 -11 3.0 -20 3000
 object fishclown 0 1.0 -16 6.0 90 12
 object bunny 10 -0.8 -17 1.0 0 0
