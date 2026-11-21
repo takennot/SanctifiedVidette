@@ -3,7 +3,6 @@
 #include "mesh_data.hpp"
 #include <glbinding/gl/types.h>
 #include <glm/glm.hpp>
-#include <string.h>
 
 struct Mesh
 {

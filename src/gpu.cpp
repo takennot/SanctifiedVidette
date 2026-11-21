@@ -49,6 +49,7 @@ namespace
             char log[4096] = {};
             gl::glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
             std::cerr << "Shader compilation failed:\n" << log << '\n';
+            std::cerr << "Shader source:\n" << source << '\n';
             gl::glDeleteShader(shader);
             return 0;
         }
@@ -84,10 +85,24 @@ namespace
     // Create a GPU program from vertex and fragment shaders
     gl::GLuint createProgram(const std::string& vertexSource, const std::string& fragmentSource)
     {
-        gl::GLuint vs = compileShader(gl::GL_VERTEX_SHADER, vertexSource);
-        if (!vs) return 0;
+        const std::string vsText = readFile(vertexSource);
+        const std::string fsText = readFile(fragmentSource);
 
-        gl::GLuint fs = compileShader(gl::GL_FRAGMENT_SHADER, fragmentSource);
+        if (vsText.empty() || fsText.empty())
+        {
+            std::cerr << "Missing shaders: " << vertexSource << " or " << fragmentSource << '\n';
+            return 0;
+        }
+
+        gl::GLuint vs = compileShader(gl::GL_VERTEX_SHADER, vsText);
+
+        if (!vs)
+        {
+            return 0;
+        }
+
+        gl::GLuint fs = compileShader(gl::GL_FRAGMENT_SHADER, fsText);
+
         if (!fs)
         {
             gl::glDeleteShader(vs);

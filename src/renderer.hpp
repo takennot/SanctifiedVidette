@@ -1,5 +1,7 @@
 // should just look at current game state and render it
 
+#pragma once
+
 #include "asset_cache.hpp"
 #include "player.hpp"
 #include "scene.hpp"
