@@ -29,25 +29,6 @@
 
 namespace
 {
-    constexpr float kFloorY = -0.8f;
-
-    // uses UV now
-    MeshData makeFloor()
-    {
-        MeshData md;
-        const float x = 8.5f, z = 5.6f;
-        // uv - 00, 80, 85, 05
-        // 80, 85, 05 to repeat texture at x and/or z
-        md.vertices = {
-            {-x, kFloorY,  z, 0,1,0, 0,0},
-            { x, kFloorY,  z, 0,1,0, 8,0},
-            { x, kFloorY, -z, 0,1,0, 8,5},
-            {-x, kFloorY, -z, 0,1,0, 0,5}
-        };
-        md.indices = {0, 1, 2, 0, 2, 3};
-        return md;
-    }
-
     // reworked SceneObject kinda
     // placement of a model in a scene
     struct Instance
@@ -202,185 +183,11 @@ int main()
     {
         glfwPollEvents();
 
-        // move all this to separate handle input stuff
-        // Toggle once per P key press
-        const bool pressedP = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
-
-        if (pressedP && !previousP)
-        {
-            perspective = !perspective;
-            glfwSetWindowTitle(window, perspective ? "Sanctified Vidette [Perspective]" : "Sanctified Vidette [Orthographic]");
-        }
-        previousP = pressedP;
-
-        const bool pressedW = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
-
-        if (pressedW && !previousW)
-        {
-            wireframe = !wireframe;
-
-            if (currentMode == 0) {
-                currentMode = 1;
-                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_LINE);
-            }
-            else if (currentMode == 1) {
-                currentMode = 2;
-                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_POINT);
-            }
-            else if (currentMode == 2) {
-                currentMode = 0;
-                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL);
-            }
-        }
-
-        previousW = pressedW;
-
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        {
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
-        }
-
-        if (cullFaces)
-        {
-            gl::glEnable(gl::GL_CULL_FACE);
-        }
-        else
-        {
-            gl::glDisable(gl::GL_CULL_FACE);
-        }
-
-        switch (faceCullMode)
-        {
-            case 0:
-                glCullFace(gl::GL_FRONT);
-                break;
-            case 1:
-                glCullFace(gl::GL_BACK);
-                break;
-            case 2:
-                glCullFace(gl::GL_FRONT_AND_BACK);
-                break;
-        }
-
         //imgui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         ImGui::End();
-
-        int framebufferWidth, framebufferHeight;
-        glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
-
-        if (framebufferWidth <= 0 || framebufferHeight <= 0)
-        {
-            ImGui::Render();
-            glfwSwapBuffers(window);
-            continue;
-        }
-
-        gl::glViewport(0, 0, framebufferWidth, framebufferHeight);
-
-        const float aspect = float(framebufferWidth) / float(framebufferHeight);
-
-        // view matrix aka camera
-        // look at args - camera pos, camera target dir, up
-        const glm::mat4 view = glm::lookAt(
-                               glm::make_vec3(cameraPos),
-                               glm::make_vec3(cameraTarget),
-                               glm::vec3(0.0f, 1.0f, 0.0f));
-
-        // projection matrix
-        // 70 fov
-        // perspective is weird - matrix copies depth to w coord. After vertex shader, gpu divides x & y by w to get that distortion.
-        // ortho is weirder - box 10.4 tall and 10.4 * aspect wide, but this time no w division so kinda mapping straight to screen?
-        const glm::mat4 projection = perspective
-                                   ? glm::perspective(glm::radians(cameraFOV), aspect, 0.1f, 80.0f)
-                                   : glm::ortho(-5.2f * aspect, 5.2f * aspect, -5.2f, 5.2f, 0.1f, 80.0f);
-
-//         // clear last frame
-        gl::glClearColor(0.09f, 0.12f, 0.20f, 1.0f);
-        gl::glClearStencil(0);
-        gl::glClear(gl::GL_COLOR_BUFFER_BIT | gl::GL_DEPTH_BUFFER_BIT | gl::GL_STENCIL_BUFFER_BIT);
-
-        // set view & projection, same for all objects anyway
-        gl::glUseProgram(program);
-        gl::glUniformMatrix4fv(u.view, 1, gl::GL_FALSE, glm::value_ptr(view));
-        gl::glUniformMatrix4fv(u.projection, 1, gl::GL_FALSE, glm::value_ptr(projection));
-
-        glm::vec3 light(lightDirection[0], lightDirection[1], lightDirection[2]);
-        light = glm::normalize(light);
-        gl::glUniform3f(u.lightDirection, light.x, light.y, light.z);
-
-        switch (currentMode)
-        {
-            case 0:
-                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL);
-                break;
-            case 1:
-                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_LINE);
-                break;
-            case 2:
-                gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_POINT);
-                break;
-        }
-
-        gl::glUniform1i(u.albedo, 0);
-        gl::glUniform1i(u.shadowPass, 0);
-
-        drawMesh(floor, u, glm::mat4(1.0f), glm::vec3(1.0f), floorTexture, false, textured, showNormals);
-
-        const float t = animate ? static_cast<float>(glfwGetTime()) * animationSpeedModifier : 0.0f;
-
-        // lambda to not repeat for loop
-        auto drawInstances = [&](bool shadow)
-        {
-            for (const Instance& instance : instances)
-            {
-                glm::vec3 pos = instance.position;
-
-                reverseRotation ?
-                    cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
-                                textured, showNormals, instance.rotationSpeed * -t,
-                                instance.scale) :
-                    cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
-                                textured, showNormals, instance.rotationSpeed * t,
-                                instance.scale);
-
-                // cache.renderObj(instance.name, pos, u, selectedLoader == 1, shadow,
-                //                 textured, showNormals, instance.rotationSpeed * t,
-                //                 instance.scale);
-            }
-        };
-
-        if (shadows)
-        {
-            // shadows
-            // enable per pixel counter
-            gl::glEnable(gl::GL_STENCIL_TEST);
-            // write to all 8 bits
-            gl::glStencilMask(0xFF);
-            // pass only if counter is 0
-            gl::glStencilFunc(gl::GL_EQUAL, 0, 0xFF);
-            // If stencil fails: keep. If depth fails: keep. If both pass: add 1
-            gl::glStencilOp(gl::GL_KEEP, gl::GL_KEEP, gl::GL_INCR);
-            // Shadows don't write depth, so they can't block anything drawn later
-            gl::glDepthMask(gl::GL_FALSE);  // Keep the floor depth.
-            // for transparency
-            gl::glEnable(gl::GL_BLEND);
-            // shadow * alpha + floor * (1 - alpha)
-            // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFunc.xhtml
-            // "Transparency is best implemented using blend function (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)" - straight up yoinked from docs
-            // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
-            gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
-            drawInstances(true);
-            gl::glDisable(gl::GL_BLEND);
-            gl::glDisable(gl::GL_STENCIL_TEST);
-            gl::glDepthMask(gl::GL_TRUE);
-        }
-
-        drawInstances(false);
-        gl::glBindVertexArray(0);
-        gl::glPolygonMode(gl::GL_FRONT_AND_BACK, gl::GL_FILL); // don't wireframe imgui
 
         // OpenGL error checking
         gl::GLenum error;
@@ -399,9 +206,6 @@ int main()
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
     cache.clear();
-    destroyMesh(floor);
-    gl::glDeleteTextures(1, &floorTexture);
-    gl::glDeleteProgram(program);
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
