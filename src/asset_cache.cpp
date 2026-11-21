@@ -93,8 +93,12 @@ bool AssetCache::add(const std::string& name, const std::string& objPath, const 
         return false;
     }
 
+    // try to reuse a cached texture
+    // look up texture path in the hash map
     const auto foundTexture = textures_.find(texturePath);
 
+    // if found reuse existing texture ID
+    // if not, load img, remember texture ID
     if (foundTexture != textures_.end())
     {
         asset.texture = foundTexture->second;
