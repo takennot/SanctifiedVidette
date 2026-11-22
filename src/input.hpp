@@ -7,7 +7,13 @@
 struct GLFWwindow;
 
 // glfw callbacks --> input state --> input actions --> action requests
-
+// for example: press W, hold for 3 sec, release.
+// glfw callback tells input state that W is down, input system builds the player commands, that sees W is held and sets forward to +1.
+// the player reads that command and moves.
+//
+// Input state remembers that W is held by using the keys_[GLFW_KEY_W] = true
+// game checks that stored value every frame
+// When W is released - keys_[GLFW_KEY_W] = false. So forward is 0, game reads that and stops moving.
 
 // Commands express what player wants to do, not the actual movement or rendering
 // for example: "Player 1 wants to move forward" or "look right by 90 degrees"
