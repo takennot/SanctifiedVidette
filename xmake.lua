@@ -24,15 +24,18 @@ add_requires("tinyobjloader")
 
 add_requires("stb")
 
+add_requires("flecs")
+
 target("SanctifiedVidette")
     set_kind("binary")
     add_files("src/*.cpp")
-    add_packages("glfw", "glbinding", "imgui", "glm", "tinyobjloader", "stb")
+    add_packages("glfw", "glbinding", "imgui", "glm", "tinyobjloader", "stb", "flecs")
     add_defines("GLFW_INCLUDE_NONE")
 
     if is_plat("windows") then
         -- keep windows min/max macros from colliding with std::min/std::max
         add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN")
+        add_files("assets/engine/icons/icon.rc")
     end
 
     -- copy shaders next to the exe after each build, so that we can load it at runtime

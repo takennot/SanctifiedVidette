@@ -12,6 +12,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <stb_image.h>
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -98,6 +100,17 @@ int main()
         std::cerr << "Failed to create window\n";
         glfwTerminate();
         return 1;
+    }
+
+    // icon
+    GLFWimage icon;
+
+    icon.pixels = stbi_load("assets/engine/icons/blackhole.png", &icon.width, &icon.height, nullptr, 4);
+
+    if (icon.pixels)
+    {
+        glfwSetWindowIcon(window, 1, &icon);
+        stbi_image_free(icon.pixels);
     }
 
     glfwMakeContextCurrent(window);

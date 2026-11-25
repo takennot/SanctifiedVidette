@@ -91,7 +91,7 @@ namespace
 
 bool Renderer::initialize()
 {
-    program_ = createProgram("shaders/a4.vert", "shaders/a4.frag");
+    program_ = createProgram("shaders/a5.vert", "shaders/a5.frag");
 
     if (!program_)
     {
