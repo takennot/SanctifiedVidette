@@ -23,6 +23,7 @@
 #include "asset_cache.hpp"
 #include "debug_ui.hpp"
 #include "input.hpp"
+#include "ecs_world.hpp"
 #include "player.hpp"
 #include "renderer.hpp"
 #include "scene.hpp"
@@ -43,13 +44,11 @@ namespace
         assets.add("teapot", "assets/models/teapot.obj", "assets/textures/non_existent_texture.png");
     }
 
-    void applyScene(const SceneCollection& scenes, int index, std::array<Player, 2>& players, GLFWwindow* window)
+    void applyScene(const SceneCollection& scenes, int index, GameWorld& ecs, GLFWwindow* window)
     {
         // get scene data by its index
         const SceneData& scene = scenes.at(static_cast<std::size_t>(index));
-        // teleport players to start positions (taken from scene data)
-        players[0].teleport(scene.player1);
-        players[1].teleport(scene.player2);
+        ecs.activate(scene);
         // set title to show the scene name
         glfwSetWindowTitle(window, ("Sanctified Vidette | " + scene.name).c_str());
     }
@@ -150,17 +149,24 @@ int main()
         return 1;
     }
 
-    // loop through all loaded scenes
+    // Load texture overrides once, before the first render. Validate mesh references.
     for (std::size_t s = 0; s < scenes.count(); ++s)
     {
-        // for every obj in all scenes
-        for (const auto& obj : scenes.at(s).objects)
+        for (const auto& entity : scenes.at(s).entities)
         {
-            // check if its in the cache
-            if (!assets.find(obj.model))
+            if (entity.mesh && !assets.find(entity.mesh->model))
             {
-                // just a warning is good enough, Renderer::drawWorld() skips missing models so its okay
-                std::cerr << "Warning: scene '" << scenes.at(s).name << "' references unloaded model '" << obj.model << "'\n";
+                std::cerr << "Unknown model '" << entity.mesh->model << "' in scene '" << scenes.at(s).name << "'\n";
+                assets.clear();
+                renderer.shutdown();
+                glfwDestroyWindow(window);
+                glfwTerminate();
+                return 1;
+            }
+
+            if (entity.texture && entity.texture->path != "default" && entity.texture->path != "none")
+            {
+                assets.loadOrGetTexture(entity.texture->path);
             }
         }
     }
@@ -242,11 +248,10 @@ int main()
 
     // create players, teleport them to spawn pos
     // get time. wordl time is separate time for animation, advances only when animation is enabled (can go forward & backward)
-    std::array<Player, 2> players;
+    GameWorld ecs;
     int sceneIndex = 0;
-    applyScene(scenes, sceneIndex, players, window);
+    applyScene(scenes, sceneIndex, ecs, window);
     double lastTime = glfwGetTime();
-    float worldTime = 0.0f;
 
     while (!glfwWindowShouldClose(window))
     {
@@ -265,7 +270,7 @@ int main()
         ImGui::NewFrame();
 
         // draw debug ui returns one frame ui requests for things like scene selection and/or resetting players
-        const UiActions ui = drawDebugUI(settings, scenes, sceneIndex, assets, inputs, players, lastAction);
+        const UiActions ui = drawDebugUI(settings, scenes, sceneIndex, assets, inputs, ecs, lastAction);
         // exposes capture flags indicating if ui needs keyboard/mouse
         const ImGuiIO& io = ImGui::GetIO();
         // dispatches key actions, reads held input, samples the controller & returns commands for p1 & p2
@@ -295,7 +300,7 @@ int main()
         if (nextScene >= 0 && nextScene < static_cast<int>(scenes.count()) && nextScene != sceneIndex)
         {
             sceneIndex = nextScene;
-            applyScene(scenes, sceneIndex, players, window);
+            applyScene(scenes, sceneIndex, ecs, window); // teleports both players
             inputs.releaseMouse(window);
         }
 
@@ -303,23 +308,11 @@ int main()
         // but who cares
         if (ui.resetPlayers)
         {
-            applyScene(scenes, sceneIndex, players, window);
+            ecs.resetPlayers(scenes.at(static_cast<std::size_t>(sceneIndex)));
         }
 
-        // update p1 movement from p1 command
-        players[0].update(cmd.player[0], dt);
-
-        // p2 is updatfed only when splitscreen is enabled
-        if (settings.render.multiplayer)
-        {
-            players[1].update(cmd.player[1], dt);
-        }
-
-        // if there are animations, advance animation clock
-        if (settings.animate)
-        {
-            worldTime += dt * settings.animationSpeed * (settings.reverseAnimation ? -1.0f : 1.0f);
-        }
+        const float animationFactor = settings.animate ? settings.animationSpeed * (settings.reverseAnimation ? -1.0f : 1.0f) : 0.0f;
+        ecs.update(cmd, settings.render.multiplayer, dt, animationFactor);
 
         // after doing the one frame action, clear the requests so they won't happen in the next frame
         requests = {};
@@ -333,20 +326,18 @@ int main()
         // inc ase if minimzied
         if (width > 0 && height > 0)
         {
-            const SceneData& scene = scenes.at(static_cast<std::size_t>(sceneIndex));
-
             // if splitscreen - move p1 camera to left, p2 to right.
             // if not - render only p1, tho p2 camera still exists, its just not rendered nor updated
             if (settings.render.multiplayer)
             {
                 const int leftWidth = width / 2;
 
-                renderer.drawViewport(0, 0, leftWidth, height, 0, players, scene, assets, settings.render, worldTime);
-                renderer.drawViewport(leftWidth, 0, width - leftWidth, height, 1, players, scene, assets, settings.render, worldTime);
+                renderer.drawViewport(0, 0, leftWidth, height, 0, ecs, assets, settings.render);
+                renderer.drawViewport(leftWidth, 0, width-leftWidth, height, 1, ecs, assets, settings.render);
             }
             else
             {
-                renderer.drawViewport(0, 0, width, height, 0, players, scene, assets, settings.render, worldTime);
+                renderer.drawViewport(0, 0, width, height, 0, ecs, assets, settings.render);
             }
 
             // draw the player text
