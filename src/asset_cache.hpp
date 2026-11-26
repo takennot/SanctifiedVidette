@@ -29,6 +29,10 @@ class AssetCache
         // register one model, name is lookup key
         bool add(const std::string& name, const std::string& objPath, const std::string& texturePath, const std::string& mtlPath = "");
 
+        gl::GLuint loadOrGetTexture(const std::string& path);
+
+        gl::GLuint findTexture(const std::string& path) const;
+
         const ModelAsset* find(const std::string& name) const;
 
         // imgui stuff

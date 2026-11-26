@@ -93,21 +93,7 @@ bool AssetCache::add(const std::string& name, const std::string& objPath, const 
         return false;
     }
 
-    // try to reuse a cached texture
-    // look up texture path in the hash map
-    const auto foundTexture = textures_.find(texturePath);
-
-    // if found reuse existing texture ID
-    // if not, load img, remember texture ID
-    if (foundTexture != textures_.end())
-    {
-        asset.texture = foundTexture->second;
-    }
-    else
-    {
-        asset.texture = loadTexture(texturePath);
-        textures_.emplace(texturePath, asset.texture);
-    }
+    asset.texture = loadOrGetTexture(texturePath);
 
     // insert model asset into the assets_ map under name
     assets_.emplace(name, asset);
@@ -138,4 +124,29 @@ void AssetCache::clear()
     textures_.clear();
     diskReads_ = 0;
     gpuUploads_ = 0;
+}
+
+gl::GLuint AssetCache::loadOrGetTexture(const std::string& path)
+{
+    if (path == "none")
+    {
+        return 0;
+    }
+
+    auto found = textures_.find(path);
+    if (found != textures_.end())
+    {
+        return found->second;
+    }
+
+    auto texture = loadTexture(path);
+    textures_.emplace(path, texture);
+
+    return texture;
+}
+
+gl::GLuint AssetCache::findTexture(const std::string& path) const
+{
+    auto found = textures_.find(path);
+    return found == textures_.end() ? 0 : found->second;
 }
