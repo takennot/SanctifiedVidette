@@ -1,5 +1,6 @@
 #pragma once
 
+#include "components.hpp"
 #include "input.hpp"
 #include <glm/glm.hpp>
 

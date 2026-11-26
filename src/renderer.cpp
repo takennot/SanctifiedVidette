@@ -106,19 +106,20 @@ bool Renderer::initialize()
     return floor_.vao != 0 && cube_.vao != 0;
 }
 
-void Renderer::drawWorld(const SceneData& scene, const AssetCache& assets,
-                         const RenderOptions& options, float worldTime, bool shadow)
+void Renderer::drawWorld(const GameWorld& ecs, const AssetCache& assets,
+                         const RenderOptions& options, bool shadow)
 {
-    // go through all objects in the scene
-    for (const SceneObject& instance : scene.objects)
+    // Read-only query: the renderer never modifies components or uploads assets.
+    ecs.eachRenderable([&](const Position& position, const Orientation& orientation,
+                           const Scale& scale, const Mesh& meshComponent, const Texture& texture)
     {
         // ask for cached/already-loaded model
-        const ModelAsset* model = assets.find(instance.model);
+        const ModelAsset* model = assets.find(meshComponent.model);
 
         // if not found / registered, skip that object
         if (!model)
         {
-            continue;
+            return;
         }
 
         // pick which mesh version - tiny or custom
@@ -133,21 +134,18 @@ void Renderer::drawWorld(const SceneData& scene, const AssetCache& assets,
         // if somehow neither exist, skip
         if (!mesh->vao)
         {
-            continue;
+            return;
         }
-
-        // convert xyz to vec3
-        const glm::vec3 pos(instance.position.x, instance.position.y, instance.position.z);
-        // get angle, yaw + total spin into radians
-        const float angle = glm::radians(instance.yawDegrees + instance.rotationSpeed * worldTime);
 
         // make the model transformation for current object
         const glm::mat4 matrix = glm::scale(
-                                            glm::rotate(glm::translate(glm::mat4(1.0f), pos), angle, glm::vec3(0,1,0)),
-                                            glm::vec3(instance.scale));
+                                            glm::rotate(glm::translate(glm::mat4(1.0f), asVec3(position)), glm::radians(orientation.yaw), glm::vec3(0,1,0)),
+                                            glm::vec3(scale.value));
 
-        drawMesh(*mesh, uniforms_, matrix, glm::vec3(1.0f), model->texture, shadow, options.textures, options.showNormals);
-    }
+        const auto tex = texture.path == "default" ? model->texture : assets.findTexture(texture.path);
+
+        drawMesh(*mesh, uniforms_, matrix, glm::vec3(1.0f), tex, shadow, options.textures && texture.path != "none", options.showNormals);
+    });
 }
 
 // args:
@@ -156,15 +154,14 @@ void Renderer::drawWorld(const SceneData& scene, const AssetCache& assets,
 // shadow - shadow
 // options - render options
 // TODO: rewrite later to use a normal mesh instead of this goofy trash
-void Renderer::drawAvatar(const Player& other, int playerIndex, bool shadow,
-                          const RenderOptions& options)
+void Renderer::drawAvatar(const CameraPose& other, int playerIndex, bool shadow, const RenderOptions& options)
 {
     // P1 - blue, P2 - orange
     const glm::vec3 color = playerIndex == 0 ? glm::vec3(0.26f, 0.72f, 1.0f)
                                              : glm::vec3(1.0f, 0.52f, 0.18f);
 
     // get eye pos / camera pos
-    glm::vec3 pos = other.eyePosition;
+    glm::vec3 pos = asVec3(other.position);
 
     // make body
     // move one cube down by 0.96 units
@@ -182,11 +179,11 @@ void Renderer::drawAvatar(const Player& other, int playerIndex, bool shadow,
     // A "nose" ish thingy, to show which direction player is facing
     // only this rotates with yaw
     // replace later with a head that rotates instead maybe?
-    drawMesh(cube_, uniforms_, translateScale(pos + glm::vec3(0, -0.19f, 0) + other.forward() * 0.29f, {0.12f, 0.13f, 0.12f}),
+    drawMesh(cube_, uniforms_, translateScale(pos + glm::vec3(0, -0.19f, 0) + forward(other.orientation) * 0.29f, {0.12f, 0.13f, 0.12f}),
              glm::vec3(0.1f), 0, shadow, false, options.showNormals);
 }
 
-void Renderer::drawGoal(const Vec3Data& goal, bool shadow, const RenderOptions& options)
+void Renderer::drawGoal(const Position& goal, bool shadow, const RenderOptions& options)
 {
     // goal doesn't need shadow (for now at least, maybe can have it in the future)
     if (shadow)
@@ -210,8 +207,8 @@ void Renderer::drawGoal(const Vec3Data& goal, bool shadow, const RenderOptions& 
 // fml.
 // args: go to .hpp
 void Renderer::drawViewport(int x, int y, int width, int height, int viewerIndex,
-                            const std::array<Player, 2>& players, const SceneData& scene,
-                            const AssetCache& assets, const RenderOptions& options, float worldTime)
+                            const GameWorld& ecs,
+                            const AssetCache& assets, const RenderOptions& options)
 {
     // check rectangle size & ignore if impossible
     if (width <= 0 || height <= 0)
@@ -268,7 +265,7 @@ void Renderer::drawViewport(int x, int y, int width, int height, int viewerIndex
     gl::glUseProgram(program_);
 
     // choose this viewer's camera
-    const glm::mat4 view = players[static_cast<std::size_t>(viewerIndex)].viewMatrix();
+    const glm::mat4 view = viewMatrix(ecs.camera(viewerIndex));
     // viewport aspect
     const float aspect = static_cast<float>(width) / static_cast<float>(height);
 
@@ -314,7 +311,7 @@ void Renderer::drawViewport(int x, int y, int width, int height, int viewerIndex
         // Example with red color - if floor is 0.4 in red value and shadow is 0.02 in red - 0.02 * 0.52 (because we set alpha to 0.52 in the frag shader) + 0.4 * 0.48 (because 100-52) = 0.2024
         gl::glBlendFunc(gl::GL_SRC_ALPHA, gl::GL_ONE_MINUS_SRC_ALPHA);
 
-        drawWorld(scene, assets, options, worldTime, true);
+        drawWorld(ecs, assets, options, true);
 
         // draw player 2 shadow if splitscreen
         if (options.multiplayer)
@@ -322,7 +319,7 @@ void Renderer::drawViewport(int x, int y, int width, int height, int viewerIndex
             // 1 - viewerIndex
             // if camera is P1 (0), other player is P2 (1) = 1 - 0 = 1 (draw P2 body)
             // if camera is P2 (1), other player is P1 (0) = 1 - 1 = 0 (draw P1 body)
-            drawAvatar(players[static_cast<std::size_t>(1 - viewerIndex)], 1 - viewerIndex, true, options);
+            drawAvatar(ecs.camera(1 - viewerIndex), 1 - viewerIndex, true, options);
         }
 
         gl::glDisable(gl::GL_BLEND);
@@ -331,12 +328,12 @@ void Renderer::drawViewport(int x, int y, int width, int height, int viewerIndex
     }
 
     // draw scene objects, then goal, then players
-    drawWorld(scene, assets, options, worldTime, false);
-    drawGoal(scene.goal, false, options);
+    drawWorld(ecs, assets, options, false);
+    drawGoal(ecs.goalPosition(), false, options);
 
     if (options.multiplayer)
     {
-        drawAvatar(players[static_cast<std::size_t>(1 - viewerIndex)], 1 - viewerIndex, false, options);
+        drawAvatar(ecs.camera(1 - viewerIndex), 1 - viewerIndex, false, options);
     }
 
     // unbind vao, disable wireframe so that imgui doesnt get wireframed, disable culling, disable scissor

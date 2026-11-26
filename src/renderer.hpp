@@ -40,17 +40,17 @@ class Renderer
         // options - you're not gonna believe this, options
         // wordlTime - accumulated animation time (for rotating level objs for now)
         void drawViewport(int x, int y, int width, int height, int viewerIndex,
-                          const std::array<Player, 2>& players, const SceneData& scene,
-                          const AssetCache& assets, const RenderOptions& options, float worldTime);
+                          const GameWorld& ecs,
+                          const AssetCache& assets, const RenderOptions& options);
         void shutdown();
     private:
         // draw the level's objs using the chosen cached loader mesh.
-        void drawWorld(const SceneData& scene, const AssetCache& assets,
-                       const RenderOptions& options, float worldTime, bool shadow);
+        void drawWorld(const GameWorld& ecs, const AssetCache& assets,
+                       const RenderOptions& options, bool shadow);
         // (try to) draw the other player
-        void drawAvatar(const Player& other, int playerIndex, bool shadow, const RenderOptions& options);
+        void drawAvatar(const CameraPose& other, int playerIndex, bool shadow, const RenderOptions& options);
         // draw goal?... you know
-        void drawGoal(const Vec3Data& goal, bool shadow, const RenderOptions& options);
+        void drawGoal(const Position& goal, bool shadow, const RenderOptions& options);
 
         gl::GLuint program_ = 0;
         Uniforms uniforms_{};
