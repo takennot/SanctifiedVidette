@@ -1,5 +1,5 @@
 set_project("SanctifiedVidette")
-set_version("0.4.0")
+set_version("0.5.0")
 
 set_languages("c++20")
 
