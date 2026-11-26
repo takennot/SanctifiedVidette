@@ -8,54 +8,37 @@
 //
 // # is a comment
 // scene is a scene title, spaces allowed
-// player1 x y z yaw pitch
-// player2 x y z yaw pitch
-// goal x y z
-// object modelName x y z size yawAngle spinSpeed
-//
-// Goal is a testing thingy, maybe can be reused in the future
+// entity Entity Name
+// inside you can add components - position, orientation, player, goal, mesh, texture, scale, rotation
+// end indicates entity end
 
 #pragma once
 
+#include "components.hpp"
 #include <cstddef>
 #include <string>
+#include <optional>
 #include <string_view>
 #include <vector>
 
-// I could use glm::vec3 instead but then its another GLM dependency
-struct Vec3Data
+struct EntityData
 {
-    float x = 0.0f, y = 0.0f, z = 0.0f;
-};
-
-// starting camera pos + starting look angles
-struct PlayerSpawn
-{
-    Vec3Data position;
-    float yawDegrees = -90.0f;
-    float pitchDegrees = 0.0f;
-};
-
-// model is lookup name in AssetCache, not the path
-// yawDegrees is starting angle around world Y
-struct SceneObject
-{
-    std::string model;
-    Vec3Data position;
-    float scale = 1.0f;
-    float yawDegrees = 0.0f;
-    // degrees per second
-    float rotationSpeed = 0.0f;
+    Name name;
+    Position position;
+    Orientation orientation;
+    Scale scale;
+    std::optional<Mesh> mesh;
+    std::optional<Texture> texture;
+    std::optional<Player> player;
+    std::optional<Rotation> rotation;
+    bool goal = false;
 };
 
 // level is - a title, 2 player starts, goal & list of objects
 struct SceneData
 {
     std::string name;
-    PlayerSpawn player1;
-    PlayerSpawn player2;
-    Vec3Data goal;
-    std::vector<SceneObject> objects;
+    std::vector<EntityData> entities;
 };
 
 // to prevent crashing on parse.

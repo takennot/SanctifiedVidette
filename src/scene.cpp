@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 namespace
@@ -66,13 +67,6 @@ namespace
         // Inline # comments are allowed, but unexplained extra arguments are errors.
         return !(stream >> extra) || (!extra.empty() && extra[0] == '#');
     }
-
-    // load 3 floats to xyz position
-    // stops if one of the components is invalid
-    bool position(std::istringstream& s, Vec3Data& p)
-    {
-        return readNumber(s, p.x) && readNumber(s, p.y) && readNumber(s, p.z);
-    }
 }
 
 SceneLoadResult parseScene(std::string_view text)
@@ -82,127 +76,204 @@ SceneLoadResult parseScene(std::string_view text)
     std::istringstream input(std::string{text});
     std::string line;
     std::size_t lineNumber = 0;
+    std::optional<EntityData> current;
+    std::unordered_set<std::string> names, fields;
     // prevents duplicates & checks if all reqs are done
-    bool seenName = false, seenP1 = false, seenP2 = false, seenGoal = false;
+    bool seenPlayers[2] = {false, false};
+    int goals = 0, objects = 0;
+
+    auto fail = [&](const std::string& why)
+    {
+        result.error = "Line " + std::to_string(lineNumber) + ": " + why;
+        return result;
+    };
 
     // for each line
     while (std::getline(input, line))
     {
         ++lineNumber;
+        line = line.substr(0, line.find('#'));
         // read word by word
         std::istringstream stream(line);
         std::string type;
 
         // ignore empty lines or comment lines
-        if (!(stream >> type) || type[0] == '#')
+        if (!(stream >> type))
         {
             continue;
         }
 
         bool valid = true;
 
-        if (type == "scene")
+        if (!current)
         {
-            // if already seen scene, mark invalid/duplicate
-            if (seenName)
+            if (type == "scene" && result.scene.name.empty())
             {
-                valid = false;
+                std::getline(stream, line);
+                result.scene.name = trim(line);
+
+                if (result.scene.name.empty())
+                {
+                    return fail("Missing scene name");
+                }
             }
-
-            // read title, trim whitespaces
-            std::string name;
-            std::getline(stream, name);
-            result.scene.name = trim(name);
-            // A scene title can contain spaces; "#" starts an optional comment.
-            const auto hash = result.scene.name.find('#');
-
-            // if there is a comment, remove it + everything after it
-            if (hash != std::string::npos)
+            else if (type == "entity" && !result.scene.name.empty())
             {
-                result.scene.name = trim(result.scene.name.substr(0, hash));
-            }
+                std::getline(stream, line);
+                line = trim(line);
 
-            // reject empty name
-            valid = valid && !result.scene.name.empty();
-            // mark name as seen
-            seenName = true;
-        }
-        else if (type == "player1" || type == "player2")
-        {
-            // which PLayerSpawn to fill
-            const bool isP1 = type == "player1";
-            PlayerSpawn& p = isP1 ? result.scene.player1 : result.scene.player2;
+                if (line.empty() || !names.insert(line).second)
+                {
+                    return fail("Missing or duplicate entity name");
+                }
 
-            // rejects if seen either player
-            if (isP1 ? seenP1 : seenP2)
-            {
-                valid = false;
-            }
-
-            // read xyzyawpitch, check no extra args in line, reject pitch outside range
-            valid = valid && position(stream, p.position) && readNumber(stream, p.yawDegrees)
-                 && readNumber(stream, p.pitchDegrees) && finishLine(stream)
-                 && p.pitchDegrees >= -89.0f && p.pitchDegrees <= 89.0f;
-
-            //mark seen
-            if (isP1)
-            {
-                seenP1 = true;
+                current.emplace();
+                current->name.value = line;
+                fields.clear();
             }
             else
             {
-                seenP2 = true;
+                return fail("Expected scene name or entity name");
+            }
+
+            continue;
+        }
+
+        auto& e = *current;
+
+        if (type == "end")
+        {
+            if (!finishLine(stream) || !fields.contains("position"))
+            {
+                return fail("Entity needs position and an end (no arguments after end)");
+            }
+
+            // might change in the future actually (like playing tag gamemode)
+            if (e.player && e.goal)
+            {
+                return fail("An entity cannot be both player and goal");
+            }
+
+            if (e.player || e.goal)
+            {
+                if (e.mesh || e.texture || e.rotation || fields.contains("scale"))
+                {
+                    return fail("Players/goals use built-in visuals; mesh, texture, scale and rotation are for objects");
+                }
+
+                if (e.player)
+                {
+                    if (!fields.contains("orientation"))
+                    {
+                        return fail("Player needs orientation");
+                    }
+
+                    if (seenPlayers[e.player->index])
+                    {
+                        return fail("Duplicate player index");
+                    }
+
+                    seenPlayers[e.player->index] = true;
+                }
+                else
+                {
+                    if (fields.contains("orientation"))
+                    {
+                        return fail("Goal uses a fixed orientation");
+                    }
+
+                    // Might change in the future (multiple goals, like each player has own goal OR one goal after another OR idk)
+                    if (++goals > 1)
+                    {
+                        return fail("Duplicate goal");
+                    }
+                }
+            }
+            else
+            {
+                if (!e.mesh || !e.texture)
+                {
+                    return fail("Object needs mesh and texture (default or none allowed)");
+                }
+
+                // probably change in hte future
+                if (e.orientation.pitch != 0)
+                {
+                    return fail("Objects currently rotate around Y only; pitch must be 0");
+                }
+
+                ++objects;
+            }
+            result.scene.entities.push_back(std::move(e));
+            current.reset();
+            continue;
+        }
+
+        if (!fields.insert(type).second)
+        {
+            return fail("Duplicate component: " + type);
+        }
+
+        bool ok = true;
+        if (type == "position")
+        {
+            ok = readNumber(stream, e.position.x) && readNumber(stream, e.position.y) && readNumber(stream, e.position.z);
+        }
+        else if (type == "orientation")
+        {
+            ok = readNumber(stream,e.orientation.yaw) && readNumber(stream,e.orientation.pitch) && std::abs(e.orientation.pitch) <= 89;
+        }
+        else if (type == "scale")
+        {
+            ok = readNumber(stream,e.scale.value) && e.scale.value > 0;
+        }
+        else if (type == "mesh")
+        {
+            e.mesh.emplace();
+            ok = bool(stream >> e.mesh->model);
+        }
+        else if (type == "texture")
+        {
+            e.texture.emplace();
+            ok = bool(stream >> e.texture->path);
+        }
+        else if (type == "rotation")
+        {
+            e.rotation.emplace();
+            ok = readNumber(stream,e.rotation->degreesPerSecond);
+        }
+        else if (type == "player")
+        {
+            std::string id;
+            ok = bool(stream >> id) && (id == "1" || id == "2");
+            if (ok)
+            {
+                e.player = Player{id == "1" ? 0 : 1};
             }
         }
         else if (type == "goal")
         {
-            // 1 goal with xyz + comment for validity
-            valid = !seenGoal && position(stream, result.scene.goal) && finishLine(stream);
-            seenGoal = true;
-        }
-        else if (type == "object")
-        {
-            // temp scene object
-            SceneObject item;
-
-            // stream >> item.model reads name of cached model
-            // cast to bool to get true or false
-            // reject a model token starting with "#"
-            // read all that
-            // check if line is clear after
-            // check if scale is positiuve
-            valid = static_cast<bool>(stream >> item.model) && item.model[0] != '#'
-                 && position(stream, item.position)
-                 && readNumber(stream, item.scale)
-                 && readNumber(stream, item.yawDegrees)
-                 && readNumber(stream, item.rotationSpeed)
-                 && finishLine(stream)
-                 && item.scale > 0.0f;
-
-            // if valid, move this temp object to scene vector
-            if (valid)
-            {
-                result.scene.objects.push_back(std::move(item));
-            }
+            e.goal = true;
         }
         else
         {
-            valid = false;
+            return fail("Unknown component: " + type);
         }
 
-        // if anything is wrong, it will be errored, instead of ignored
-        // show which keyword & which line caused error, then stop parsing
-        if (!valid)
+        if (!ok || !finishLine(stream))
         {
-            result.error = "Invalid or duplicate '" + type + "' on scene line " + std::to_string(lineNumber);
-            return result;
+            return fail("Invalid component: " + type);
         }
     }
 
-    // check if scene has everything
-    if (!seenName || !seenP1 || !seenP2 || !seenGoal || result.scene.objects.size() < 2)
+    if (current)
     {
-        result.error = "Scene requires: scene name, player1, player2, goal, and at least two objects";
+        return fail("Missing end for entity " + current->name.value);
+    }
+
+    if (result.scene.name.empty() || !seenPlayers[0] || !seenPlayers[1] || goals != 1 || objects < 2)
+    {
+        return fail("Scene needs a name, both players, one goal and at least two objects");
     }
 
     return result;
@@ -216,33 +287,33 @@ SceneLoadResult loadScene(const std::string& path)
     // return error if fail
     if (!file)
     {
-        SceneLoadResult r;
-        r.error = "Cannot open scene file: " + path;
-        return r;
+        SceneLoadResult result;
+        result.error = "Cannot open scene file: " + path;
+        return result;
     }
 
     // read whole file into contents
     std::ostringstream contents;
     contents << file.rdbuf();
     // structure the data
-    SceneLoadResult r = parseScene(contents.str());
+    SceneLoadResult result = parseScene(contents.str());
 
     // if parsing fails, prefix error with file path so we know which scenes did that
-    if (!r.ok())
+    if (!result.ok())
     {
-        r.error = path + ": " + r.error;
+        result.error = path + ": " + result.error;
     }
 
-    return r;
+    return result;
 }
 
 bool SceneCollection::load(const std::vector<std::string>& paths, std::string& error)
 {
-    // erase old scenes
-    scenes_.clear();
+    std::vector<SceneData> next;
+    std::unordered_set<std::string> names;
 
     // for each provided path, call loadScene
-    for (const std::string& path : paths)
+    for (const auto& path : paths)
     {
         auto result = loadScene(path);
 
@@ -250,33 +321,29 @@ bool SceneCollection::load(const std::vector<std::string>& paths, std::string& e
         if (!result.ok())
         {
             error = result.error;
-            scenes_.clear();
             return false;
         }
 
-        // for each scene so far
-        for (const auto& previous : scenes_)
+        // check & reject duplicates
+        if (!names.insert(result.scene.name).second)
         {
-            // check & reject duplicates
-            if (previous.name == result.scene.name)
-            {
-                error = "Duplicate scene name: " + result.scene.name;
-                scenes_.clear();
-                return false;
-            }
+            error = "Duplicate scene name: " + result.scene.name;
+            return false;
         }
 
         // if scene is okay, move it to scenes_
-        scenes_.push_back(std::move(result.scene));
+        next.push_back(std::move(result.scene));
     }
 
     // at least 3 scenes innit
-    if (scenes_.size() < 3)
+    if (next.size() < 3)
     {
         error = "At least three scene files are required";
         return false;
     }
 
     // loaded all successfully
+    scenes_ = std::move(next);
+    error.clear();
     return true;
 }
