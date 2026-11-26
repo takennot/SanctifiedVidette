@@ -33,4 +33,4 @@ struct UiActions
 // lastAction - show last keyboard action event
 UiActions drawDebugUI(GameSettings& settings, const SceneCollection& scenes,
                       int sceneIndex, const AssetCache& assets, const InputSystem& input,
-                      const std::array<Player, 2>& players, const std::string& lastAction);
+                      const GameWorld& ecs, const std::string& lastAction);

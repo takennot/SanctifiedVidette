@@ -1,11 +1,12 @@
 #include "debug_ui.hpp"
+#include "components.hpp"
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <vector>
 
 UiActions drawDebugUI(GameSettings& settings, const SceneCollection& scenes,
                       int sceneIndex, const AssetCache& assets, const InputSystem& input,
-                      const std::array<Player, 2>& players, const std::string& lastAction)
+                      const GameWorld& ecs, const std::string& lastAction)
 {
     UiActions actions;
     // default imgui pos if first use
@@ -101,11 +102,10 @@ UiActions drawDebugUI(GameSettings& settings, const SceneCollection& scenes,
     ImGui::Text("Registered models: %zu", assets.uniqueModels());
     ImGui::Text("OBJ file reads: %d", assets.diskReads());
     ImGui::Text("GPU mesh uploads: %d", assets.gpuUploads());
-    ImGui::Text("Scene objects: %zu", scenes.at(static_cast<std::size_t>(sceneIndex)).objects.size());
+    ImGui::Text("Live ECS entities: %zu", ecs.entityCount());
 
     // get goal location from current scene, conver to glm::vec3
-    const Vec3Data& goal = scenes.at(static_cast<std::size_t>(sceneIndex)).goal;
-    const glm::vec3 goalPos(goal.x, goal.y, goal.z);
+    const glm::vec3 goalPos = asVec3(ecs.goalPosition());
 
     // loop through 1 or 2 players (depending on if it is multiplayer or not)
     // lowkey maybe can just get players.size here instead? input.gpp --> FrameCommands struct --> players array
@@ -113,11 +113,19 @@ UiActions drawDebugUI(GameSettings& settings, const SceneCollection& scenes,
     {
         // get vector from goal to player (ty Sergei for reminding me vector math 💀)
         // glm::length shooould get straight line distance
-        const float distance = glm::length(players[static_cast<std::size_t>(i)].eyePosition - goalPos);
+        const float distance = glm::length(asVec3(ecs.camera(i).position) - goalPos);
 
         // round it to 1 decimal
         // if distance is less than 2, show goal reached
         ImGui::Text("P%d goal distance: %.1f %s", i + 1, distance, distance < 2.0f ? "(GOAL REACHED)" : "");
+    }
+
+    if (ImGui::CollapsingHeader("ECS entity names"))
+    {
+        ecs.eachNamed([](const Name& name)
+        {
+            ImGui::BulletText("%s", name.value.c_str());
+        });
     }
 
     if (ImGui::CollapsingHeader("Cached OBJ triangle counts"))
