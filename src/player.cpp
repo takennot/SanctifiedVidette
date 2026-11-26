@@ -3,78 +3,41 @@
 #include <algorithm>
 #include <cmath>
 
-// p is spawn information from current scene file
-void Player::teleport(const PlayerSpawn& p)
+glm::vec3 asVec3(const Position& p)
 {
-    // copy spawn xyz to camera pos
-    eyePosition = {p.position.x, p.position.y, p.position.z};
-    // copy yaw
-    yawDegrees = p.yawDegrees;
-    // clamp pitch between -89 and 89 because it gets confusing when calculating right/forward
-    pitchDegrees = std::clamp(p.pitchDegrees, -89.0f, 89.0f);
+    return { p.x, p.y, p.z };
 }
 
-glm::vec3 Player::forward() const
+glm::vec3 forward(const Orientation& o)
 {
-    // convert to radians since glm uses radians
-    const float yaw = glm::radians(yawDegrees);
-    const float pitch = glm::radians(pitchDegrees);
+    const float yaw = glm::radians(o.yaw), pitch = glm::radians(o.pitch);
 
-    // x = cos(yaw) * cos(pitch) = horizontal X
-    // y = sin(pitch) = looking up makes Y positive
-    // z = sin(yaw) * cos(pitch) = horizontal Z
-    return glm::normalize(glm::vec3(
-                          std::cos(yaw) * std::cos(pitch),
-                          std::sin(pitch),
-                          std::sin(yaw) * std::cos(pitch)));
+    return glm::normalize(glm::vec3(std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)));
 }
 
-// creates camera basically
-// eyePOsition is camera pos
-// target is pos one unit ahead
-// up is... up
-glm::mat4 Player::viewMatrix() const
+glm::mat4 viewMatrix(const CameraPose& pose)
 {
-    return glm::lookAt(eyePosition, eyePosition + forward(), glm::vec3(0, 1, 0));
+    const glm::vec3 eye = asVec3(pose.position);
+
+    return glm::lookAt(eye, eye + forward(pose.orientation), glm::vec3(0,1,0));
 }
 
-void Player::update(const PlayerCommand& c, float dt)
+void updatePlayer(Position& position, Orientation& orientation, const PlayerCommand& playerCommand, float deltaTime)
 {
-    // add this frame's requested turn amounts to the current camera angles
-    // clamp vertical so it don't flip over
-    yawDegrees += c.lookYaw;
-    pitchDegrees = std::clamp(pitchDegrees + c.lookPitch, -89.0f, 89.0f);
+    orientation.yaw += playerCommand.lookYaw;
+    orientation.pitch = std::clamp(orientation.pitch + playerCommand.lookPitch, -89.0f, 89.0f);
 
-    // f points where camera looks
-    const glm::vec3 f = forward();
-    // cross product of forward & world up is a direction point right (with these coords at least)
-    // normalize to make it consistent
-    // this is for strafing
-    const glm::vec3 right = glm::normalize(glm::cross(f, glm::vec3(0, 1, 0)));
+    const glm::vec3 frwrd = forward(orientation);
+    const glm::vec3 right = glm::normalize(glm::cross(frwrd, glm::vec3(0,1,0)));
 
-    // add 3 requested movement directions
-    // forward/back along the camera forward vector (including up/down pitch)
-    // left/right along camera right
-    // vertical ascent/descent along world up, regardless of where camera looks
-    glm::vec3 movement = f * c.forward
-                       + right * c.right
-                       + glm::vec3(0, 1, 0) * c.up;
+    glm::vec3 movement = frwrd * playerCommand.forward + right * playerCommand.right + glm::vec3(0,1,0) * playerCommand.up;
 
-    // if holding W + D, length of (1, 0, -1) is sqrt(2) so 1.414 ish
-    // so diagonal movement is 41% faster
-    // dot product with itself gives squared length (2)
-    const float length2 = glm::dot(movement, movement);
-
-    // if its more than 1, normalize it back to 1
-    if (length2 > 1.0f)
+    if (glm::dot(movement,movement) > 1.0f)
     {
-        movement = glm::normalize(movement); // no faster diagonal movement
+        movement = glm::normalize(movement);
     }
 
-    // sprint is 12 units per second, otherwise 5
-    const float speed = c.sprint ? 12.0f : 5.0f;
+    auto next = asVec3(position) + movement * (playerCommand.sprint ? 12.0f : 5.0f) * deltaTime;
 
-    // multiply by delta time to convert speed to distance this frame
-    // add that movement to current eye pos
-    eyePosition += movement * speed * dt;
+    position = { next.x, next.y, next.z };
 }

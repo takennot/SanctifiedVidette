@@ -1,5 +1,4 @@
 #include "debug_ui.hpp"
-#include "components.hpp"
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <vector>
