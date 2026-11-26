@@ -4,7 +4,7 @@
 #include <glbinding/gl/types.h>
 #include <glm/glm.hpp>
 
-struct Mesh
+struct GPU_Mesh
 {
     gl::GLuint vbo = 0, vao = 0, ebo = 0;
     gl::GLsizei indexCount = 0;
@@ -29,14 +29,14 @@ gl::GLuint createProgram(const std::string& vertFile, const std::string& fragFil
 
 Uniforms findUniforms(gl::GLuint program);
 
-Mesh uploadMesh(const MeshData& data);
+GPU_Mesh uploadMesh(const MeshData& data);
 
-void destroyMesh(Mesh& mesh);
+void destroyMesh(GPU_Mesh& mesh);
 
 gl::GLuint loadTexture(const std::string& path);
 
 void destroyTexture(gl::GLuint& texture);
 
-void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model,
+void drawMesh(const GPU_Mesh& mesh, const Uniforms& u, const glm::mat4& model,
                  const glm::vec3& tint, gl::GLuint texture, bool shadow,
                  bool textured, bool showNormals);

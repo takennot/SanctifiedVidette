@@ -148,9 +148,9 @@ namespace
         };
     }
 
-    Mesh uploadMesh(const MeshData& meshData)
+    GPU_Mesh uploadMesh(const MeshData& meshData)
     {
-        Mesh mesh;
+        GPU_Mesh mesh;
 
         if (meshData.vertices.empty() || meshData.indices.empty())
         {
@@ -187,7 +187,7 @@ namespace
     }
 
     // helper, nuffsaid
-    void destroyMesh(Mesh& m)
+    void destroyMesh(GPU_Mesh& m)
     {
         if (m.ebo)
         {
@@ -255,7 +255,7 @@ namespace
         texture = 0;
     }
 
-    void drawMesh(const Mesh& mesh, const Uniforms& u, const glm::mat4& model,
+    void drawMesh(const GPU_Mesh& mesh, const Uniforms& u, const glm::mat4& model,
                      const glm::vec3& tint, gl::GLuint texture, bool shadow,
                      bool useTexture, bool showNormals)
     {

@@ -9,8 +9,8 @@
 // 2 versions + 1 texture
 struct ModelAsset
 {
-    Mesh custom;
-    Mesh external;
+    GPU_Mesh custom;
+    GPU_Mesh external;
     gl::GLuint texture = 0;
     std::string path;
     std::string error;

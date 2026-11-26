@@ -122,7 +122,7 @@ void Renderer::drawWorld(const SceneData& scene, const AssetCache& assets,
         }
 
         // pick which mesh version - tiny or custom
-        const Mesh* mesh = options.customLoader ? &model->custom : &model->external;
+        const GPU_Mesh* mesh = options.customLoader ? &model->custom : &model->external;
 
         // if selected version doesn't exist, try the other one
         if (!mesh->vao)

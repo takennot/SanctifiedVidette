@@ -3,9 +3,7 @@
 #pragma once
 
 #include "asset_cache.hpp"
-#include "player.hpp"
-#include "scene.hpp"
-#include <array>
+#include "ecs_world.hpp"
 
 // moved render settings to a struct here.
 // mostly so I can just pass 1 struct instead of 1000 separate args.
@@ -56,9 +54,9 @@ class Renderer
 
         gl::GLuint program_ = 0;
         Uniforms uniforms_{};
-        Mesh floor_{};
+        GPU_Mesh floor_{};
         // to draw the players & goal lmao
         // TODO: replace later with a proper player mesh
-        Mesh cube_{};
+        GPU_Mesh cube_{};
         gl::GLuint floorTexture_ = 0;
 };
