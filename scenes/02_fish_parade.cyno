@@ -1,19 +1,97 @@
-# Scene 2
-# Swim between oversized fish
+# Week 5 ECS scene: each entity is a block of components.
 scene Fish Parade
-player1 -9 2.5 10 -60 -5
-player2 9 2.5 10 -120 -5
-goal 0 2.0 -18
 
-# Two moving fish form the main route
-object fishclown -4 0.6 -5 7.0 70 18
-object fishclown 5 0.6 -11 8.0 -70 -14
-object fishclown -2 1.8 -15 4.0 30 25
+entity Player 1
+  position -9 2.5 10
+  orientation -60 -5
+  player 1
+end
 
-# Other creatures and props around the route
-object bunny -12 -0.8 -10 1.4 30 0
-object bunny 12 -0.8 -14 1.2 -30 0
-object cat -14 1.2 -4 3.0 60 100
-object monkey 13 0.7 -5 1.1 140 25
-object teapot -10 -0.8 -17 0.025 0 12
-object teapot 10 -0.8 -17 0.025 0 -12
+entity Player 2
+  position 9 2.5 10
+  orientation -120 -5
+  player 2
+end
+
+entity Goal
+  position 0 2.0 -18
+  goal
+end
+
+entity fishclown_1
+  position -4 0.6 -5
+  mesh fishclown
+  texture default
+  scale 7.0
+  orientation 70 0
+  rotation 18
+end
+
+entity fishclown_2
+  position 5 0.6 -11
+  mesh fishclown
+  texture default
+  scale 8.0
+  orientation -70 0
+  rotation -14
+end
+
+entity fishclown_3
+  position -2 1.8 -15
+  mesh fishclown
+  texture default
+  scale 4.0
+  orientation 30 0
+  rotation 25
+end
+
+entity bunny_1
+  position -12 -0.8 -10
+  mesh bunny
+  texture default
+  scale 1.4
+  orientation 30 0
+end
+
+entity bunny_2
+  position 12 -0.8 -14
+  mesh bunny
+  texture default
+  scale 1.2
+  orientation -30 0
+end
+
+entity cat_1
+  position -14 1.2 -4
+  mesh cat
+  texture default
+  scale 3.0
+  orientation 60 0
+end
+
+entity monkey_1
+  position 13 0.7 -5
+  mesh monkey
+  texture default
+  scale 1.1
+  orientation 140 0
+  rotation 25
+end
+
+entity teapot_1
+  position -10 -0.8 -17
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation 0 0
+  rotation 12
+end
+
+entity teapot_2
+  position 10 -0.8 -17
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation 0 0
+  rotation -12
+end

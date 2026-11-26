@@ -1,19 +1,97 @@
-# Scene 3
-# A zigzag
+# Week 5 ECS scene: each entity is a block of components.
 scene Teapot Trials
-player1 -8 2.2 12 -65 -8
-player2 8 2.2 12 -115 -8
-goal 0 1.5 -20
 
-# Slalom markers
-object teapot -8 -0.8 3 0.025 15 10
-object teapot 8 -0.8 0 0.025 -15 -10
-object teapot -8 -0.8 -7 0.025 30 20
-object teapot 8 -0.8 -12 0.025 -30 -20
+entity Player 1
+  position -8 2.2 12
+  orientation -65 -8
+  player 1
+end
 
-# Models between the slalom markers
-object bunny -2 -0.8 -3 1.2 10 0
-object monkey 3 0.7 -6 1.1 0 45
-object cat -3 1.2 -11 3.0 -20 3000
-object fishclown 0 1.0 -16 6.0 90 12
-object bunny 10 -0.8 -17 1.0 0 0
+entity Player 2
+  position 8 2.2 12
+  orientation -115 -8
+  player 2
+end
+
+entity Goal
+  position 0 1.5 -20
+  goal
+end
+
+entity teapot_1
+  position -8 -0.8 3
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation 15 0
+  rotation 10
+end
+
+entity teapot_2
+  position 8 -0.8 0
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation -15 0
+  rotation -10
+end
+
+entity teapot_3
+  position -8 -0.8 -7
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation 30 0
+  rotation 20
+end
+
+entity teapot_4
+  position 8 -0.8 -12
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation -30 0
+  rotation -20
+end
+
+entity bunny_1
+  position -2 -0.8 -3
+  mesh bunny
+  texture default
+  scale 1.2
+  orientation 10 0
+end
+
+entity monkey_1
+  position 3 0.7 -6
+  mesh monkey
+  texture default
+  scale 1.1
+  orientation 0 0
+  rotation 45
+end
+
+entity cat_1
+  position -3 1.2 -11
+  mesh cat
+  texture default
+  scale 3.0
+  orientation -20 0
+end
+
+entity fishclown_1
+  position 0 1.0 -16
+  mesh fishclown
+  texture default
+  scale 6.0
+  orientation 90 0
+  rotation 12
+end
+
+entity bunny_2
+  position 10 -0.8 -17
+  mesh bunny
+  texture default
+  scale 1.0
+  orientation 0 0
+end

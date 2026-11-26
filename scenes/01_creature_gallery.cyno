@@ -1,20 +1,95 @@
-# Scene 1
-# The players begin at opposite sides
-# Format: object MODEL x y z SCALE YAW_DEGREES ROTATION_SPEED_DEGREES_PER_SECOND
+# Week 5 ECS scene: each entity is a block of components.
 scene Creature Gallery
-player1 -7 2.2 11 -65 -8
-player2 7 2.2 11 -115 -8
-goal 0 1.2 -19
 
-# Front objects
-object bunny -10 -0.8 -2 1.0 20 0
-object teapot 10 -0.8 -3 0.02 45 12
-object cat -5 1.2 -5 3.0 0 50
-object monkey 5 0.7 -5 1.1 180 20
+entity Player 1
+  position -7 2.2 11
+  orientation -65 -8
+  player 1
+end
 
-# Centerpiece and rear objects
-object fishclown 0 0.2 -10 9.0 90 8
-object bunny -12 -0.8 -13 1.2 0 0
-object teapot 12 -0.8 -14 0.025 0 -15
-object monkey 6 0.7 -16 1.1 -30 0
-object cat -6 1.2 -16 2.5 45 25
+entity Player 2
+  position 7 2.2 11
+  orientation -115 -8
+  player 2
+end
+
+entity Goal
+  position 0 1.2 -19
+  goal
+end
+
+entity bunny_1
+  position -10 -0.8 -2
+  mesh bunny
+  texture default
+  scale 1.0
+  orientation 20 0
+end
+
+entity teapot_1
+  position 10 -0.8 -3
+  mesh teapot
+  texture default
+  scale 0.02
+  orientation 45 0
+  rotation 12
+end
+
+entity cat_1
+  position -5 1.2 -5
+  mesh cat
+  texture default
+  scale 3.0
+  orientation 0 0
+end
+
+entity monkey_1
+  position 5 0.7 -5
+  mesh monkey
+  texture default
+  scale 1.1
+  orientation 180 0
+  rotation 20
+end
+
+entity fishclown_1
+  position 0 0.2 -10
+  mesh fishclown
+  texture default
+  scale 9.0
+  orientation 90 0
+  rotation 8
+end
+
+entity bunny_2
+  position -12 -0.8 -13
+  mesh bunny
+  texture default
+  scale 1.2
+  orientation 0 0
+end
+
+entity teapot_2
+  position 12 -0.8 -14
+  mesh teapot
+  texture default
+  scale 0.025
+  orientation 0 0
+  rotation -15
+end
+
+entity monkey_2
+  position 6 0.7 -16
+  mesh monkey
+  texture default
+  scale 1.1
+  orientation -30 0
+end
+
+entity cat_2
+  position -6 1.2 -16
+  mesh cat
+  texture default
+  scale 2.5
+  orientation 45 0
+end
